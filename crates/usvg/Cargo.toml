@@ -49,7 +49,9 @@ once_cell = "1.5"
 default = ["text", "system-fonts", "memmap-fonts"]
 # Enables text-to-path conversion support.
 # Adds around 400KiB to your binary.
-text = ["fontdb", "rustybuzz", "unicode-bidi", "unicode-script", "unicode-vo"]
+text = ["text-lite", "fontdb", "rustybuzz", "unicode-bidi", "unicode-script", "unicode-vo"]
+# For intances where text parsing is required but text layout is not
+text-lite = []
 # Enables system fonts loading.
 system-fonts = ["fontdb/fs", "fontdb/fontconfig"]
 # Enables font files memmaping for faster loading.

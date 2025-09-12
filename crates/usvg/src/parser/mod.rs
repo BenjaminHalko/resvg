@@ -16,7 +16,7 @@ mod switch;
 mod units;
 mod use_node;
 
-#[cfg(feature = "text")]
+#[cfg(feature = "text-lite")]
 mod text;
 #[cfg(feature = "text")]
 pub(crate) use converter::Cache;
