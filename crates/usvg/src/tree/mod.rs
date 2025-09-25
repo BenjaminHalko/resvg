@@ -411,8 +411,8 @@ impl Stop {
     /// Gradient stop opacity.
     ///
     /// `stop-opacity` in SVG.
-    pub fn opacity(&self) -> &Opacity {
-        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    pub fn opacity(&self) -> Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE).copied()
     }
 
     /// Gradient stop opacity (potentially animated).
@@ -578,7 +578,7 @@ impl Stroke {
 
     /// Stroke dash offset.
     pub fn dashoffset(&self) -> f32 {
-        *self.dashoffset.as_static().unwrap_or(&0.0)
+        self.dashoffset.as_static().unwrap_or(&0.0).copied()
     }
 
     /// Stroke dash offset (potentially animated).
@@ -593,8 +593,8 @@ impl Stroke {
     }
 
     /// Stroke opacity.
-    pub fn opacity(&self) -> &Opacity {
-        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    pub fn opacity(&self) -> Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE).copied()
     }
 
     /// Stroke opacity (potentially animated).
@@ -605,7 +605,7 @@ impl Stroke {
 
     /// Stroke width.
     pub fn width(&self) -> StrokeWidth {
-        *self.width.as_static().unwrap_or(&StrokeWidth::new(1.0).unwrap())
+        self.width.as_static().unwrap_or(&StrokeWidth::new(1.0).unwrap()).get()
     }
 
     /// Stroke width (potentially animated).
@@ -701,8 +701,8 @@ impl Fill {
     }
 
     /// Fill opacity.
-    pub fn opacity(&self) -> &Opacity {
-        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    pub fn opacity(&self) -> Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE).copied()
     }
 
     /// Fill opacity (potentially animated).
@@ -1103,8 +1103,8 @@ impl Group {
     ///
     /// After the group is rendered we should combine
     /// it with a parent group using the specified opacity.
-    pub fn opacity(&self) -> &Opacity {
-        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    pub fn opacity(&self) -> Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE).copied()
     }
 
     /// Group opacity (potentially animated).
@@ -1202,7 +1202,7 @@ impl Group {
     /// Checks if this group should be isolated during rendering.
     pub fn should_isolate(&self) -> bool {
         self.isolate
-            || self.opacity() != &Opacity::ONE
+            || self.opacity() != Opacity::ONE
             || self.clip_path.is_some()
             || self.mask.is_some()
             || !self.filters.is_empty()
