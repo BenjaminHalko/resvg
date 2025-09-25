@@ -15,35 +15,77 @@ pub enum AnimatedValue<T> {
 }
 
 /// A generic wrapper that makes any value potentially animatable.
-/// This is always just a simple wrapper around T, regardless of animation feature.
 #[derive(Clone, Debug)]
-pub struct Animatable<T>(T);
+pub struct Animatable<T> {
+    /// The base value (static or first keyframe).
+    value: T,
+    /// Animation data when available.
+    #[cfg(feature = "animation")]
+    animation: Option<AnimatedValue<T>>,
+}
 
 impl<T> Animatable<T> {
     /// Creates a new static animatable value.
     pub fn new(value: T) -> Self {
-        Self(value)
+        Self {
+            value,
+            #[cfg(feature = "animation")]
+            animation: None,
+        }
     }
 
-    /// Gets the static value.
+    /// Gets the base value (static value or first keyframe).
     pub fn get(&self) -> &T {
-        &self.0
+        &self.value
     }
 
-    /// Gets an owned copy of the static value.
+    /// Gets an owned copy of the base value.
     pub fn resolve(&self) -> T where T: Clone {
-        self.0.clone()
+        self.value.clone()
     }
 
-    /// Sets the value.
+    /// Sets the base value.
     pub fn set(&mut self, value: T) {
-        self.0 = value;
+        self.value = value;
     }
 
     /// Gets the animation data if available.
-    /// When animation feature is disabled, this always returns Some(&T).
+    #[cfg(feature = "animation")]
+    pub fn animated(&self) -> Option<&AnimatedValue<T>> {
+        self.animation.as_ref()
+    }
+
+    /// Gets the animation data if available.
+    #[cfg(not(feature = "animation"))]
     pub fn animated(&self) -> Option<&T> {
-        Some(&self.0)
+        Some(&self.value)
+    }
+
+    /// Sets the animation data.
+    #[cfg(feature = "animation")]
+    pub fn set_animation(&mut self, animation: AnimatedValue<T>) {
+        self.animation = Some(animation);
+    }
+
+    /// Gets the keyframes if this value is animated.
+    #[cfg(feature = "animation")]
+    pub fn keyframes(&self) -> Option<&[Keyframe<T>]> {
+        self.animation.as_ref().map(|a| match a {
+            AnimatedValue::Static(_) => &[],
+            AnimatedValue::Animated(ref keyframes) => keyframes,
+        })
+    }
+
+    /// Checks if this value has animation data.
+    #[cfg(feature = "animation")]
+    pub fn is_animated(&self) -> bool {
+        self.animation.is_some()
+    }
+
+    /// Checks if this value has animation data.
+    #[cfg(not(feature = "animation"))]
+    pub fn is_animated(&self) -> bool {
+        false
     }
 }
 
