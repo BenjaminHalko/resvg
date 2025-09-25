@@ -550,10 +550,10 @@ impl Default for LineJoin {
 pub struct Stroke {
     pub(crate) paint: Paint,
     pub(crate) dasharray: Option<Vec<f32>>,
-    pub(crate) dashoffset: crate::tree::animation::Animatable<f32>,
+    pub(crate) dashoffset: f32,
     pub(crate) miterlimit: StrokeMiterlimit,
-    pub(crate) opacity: crate::tree::animation::Animatable<crate::tree::Opacity>,
-    pub(crate) width: crate::tree::animation::Animatable<crate::tree::StrokeWidth>,
+    pub(crate) opacity: Opacity,
+    pub(crate) width: StrokeWidth,
     pub(crate) linecap: LineCap,
     pub(crate) linejoin: LineJoin,
     // Whether the current stroke needs to be resolved relative
@@ -574,13 +574,7 @@ impl Stroke {
 
     /// Stroke dash offset.
     pub fn dashoffset(&self) -> f32 {
-        *self.dashoffset.get()  // Zero-cost access
-    }
-
-    /// Stroke dash offset (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_dashoffset(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.dashoffset.animated()
+        self.dashoffset
     }
 
     /// Stroke miter limit.
@@ -590,24 +584,12 @@ impl Stroke {
 
     /// Stroke opacity.
     pub fn opacity(&self) -> Opacity {
-        *self.opacity.get()  // Zero-cost access
-    }
-
-    /// Stroke opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> Option<&crate::tree::animation::AnimatedValue<Opacity>> {
-        self.opacity.animated()
+        self.opacity
     }
 
     /// Stroke width.
     pub fn width(&self) -> StrokeWidth {
-        *self.width.get()  // Zero-cost access
-    }
-
-    /// Stroke width (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_width(&self) -> Option<&crate::tree::animation::AnimatedValue<StrokeWidth>> {
-        self.width.animated()
+        self.width
     }
 
 
@@ -684,7 +666,7 @@ pub(crate) enum ContextElement {
 #[derive(Clone, Debug)]
 pub struct Fill {
     pub(crate) paint: Paint,
-    pub(crate) opacity: crate::tree::animation::Animatable<crate::tree::Opacity>,
+    pub(crate) opacity: Opacity,
     pub(crate) rule: FillRule,
     // Whether the current fill needs to be resolved relative
     // to a context element.
@@ -699,13 +681,7 @@ impl Fill {
 
     /// Fill opacity.
     pub fn opacity(&self) -> Opacity {
-        *self.opacity.get()  // Zero-cost access for internal use
-    }
-
-    /// Fill opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> Option<&crate::tree::animation::AnimatedValue<Opacity>> {
-        self.opacity.animated()
+        self.opacity
     }
 
 
@@ -719,7 +695,7 @@ impl Default for Fill {
     fn default() -> Self {
         Fill {
             paint: Paint::Color(Color::black()),
-            opacity: crate::tree::animation::Animatable::new(Opacity::ONE),
+            opacity: Opacity::ONE,
             rule: FillRule::default(),
             context_element: None,
         }
@@ -731,9 +707,9 @@ impl Default for Group {
         let dummy = Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap();
         Group {
             id: String::new(),
-            transform: crate::tree::animation::Animatable::new(Transform::default()),
+            transform: Transform::default(),
             abs_transform: Transform::default(),
-            opacity: crate::tree::animation::Animatable::new(Opacity::ONE),
+            opacity: Opacity::ONE,
             blend_mode: BlendMode::Normal,
             isolate: false,
             clip_path: None,
@@ -1053,9 +1029,9 @@ impl Node {
 #[derive(Clone, Debug)]
 pub struct Group {
     pub(crate) id: String,
-    pub(crate) transform: crate::tree::animation::Animatable<crate::tree::Transform>,
+    pub(crate) transform: Transform,
     pub(crate) abs_transform: Transform,
-    pub(crate) opacity: crate::tree::animation::Animatable<crate::tree::Opacity>,
+    pub(crate) opacity: Opacity,
     pub(crate) blend_mode: BlendMode,
     pub(crate) isolate: bool,
     pub(crate) clip_path: Option<Arc<ClipPath>>,
@@ -1109,13 +1085,7 @@ impl Group {
     ///
     /// This is a relative transform. The one that is set via the `transform` attribute in SVG.
     pub fn transform(&self) -> Transform {
-        *self.transform.get()  // Zero-cost access
-    }
-
-    /// Element's transform (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_transform(&self) -> Option<&crate::tree::animation::AnimatedValue<Transform>> {
-        self.transform.animated()
+        self.transform
     }
 
     /// Element's absolute transform.
@@ -1133,13 +1103,7 @@ impl Group {
     /// After the group is rendered we should combine
     /// it with a parent group using the specified opacity.
     pub fn opacity(&self) -> Opacity {
-        *self.opacity.get()  // Zero-cost access
-    }
-
-    /// Group opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> Option<&crate::tree::animation::AnimatedValue<Opacity>> {
-        self.opacity.animated()
+        self.opacity
     }
 
 
@@ -1396,7 +1360,7 @@ impl Path {
 
     /// Element visibility.
     pub fn is_visible(&self) -> bool {
-        self.visible.resolve()
+        self.visible
     }
 
     /// Fill style.

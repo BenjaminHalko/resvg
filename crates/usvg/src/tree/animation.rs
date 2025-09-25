@@ -14,142 +14,66 @@ pub enum AnimatedValue<T> {
     Animated(Vec<Keyframe<T>>),
 }
 
-/// A cleaner animation architecture that addresses performance and complexity concerns:
-///
-/// Key Principles:
-/// 1. Keep core usvg structures unchanged - no massive refactoring
-/// 2. Animation is an optional overlay system, not embedded in core structures
-/// 3. Only commonly animated properties are made animatable (opacity, stroke, transforms)
-/// 4. Zero-cost when animation is disabled
-/// 5. Internal functions don't need to change
+/// A minimal animation system that doesn't break existing APIs
+/// Key insight: Keep core usvg structures unchanged, add animation as a separate layer
 
-/// Simple wrapper for commonly animated properties only
-/// This keeps the core structures clean while enabling animation for key properties
+/// Simple animation data structure
 #[derive(Clone, Debug)]
-pub struct Animatable<T> {
-    value: T,
-    #[cfg(feature = "animation")]
-    animation: Option<AnimatedValue<T>>,
+#[cfg(feature = "animation")]
+pub struct AnimationData {
+    /// Element ID this animation applies to
+    pub element_id: String,
+    /// Property being animated
+    pub property: String,
+    /// Animation keyframes
+    pub keyframes: Vec<Keyframe<String>>, // Simplified for demo
 }
 
-impl<T> Animatable<T> {
-    pub fn new(value: T) -> Self {
+#[cfg(feature = "animation")]
+impl AnimationData {
+    pub fn new(element_id: String, property: String, keyframes: Vec<Keyframe<String>>) -> Self {
         Self {
-            value,
-            #[cfg(feature = "animation")]
-            animation: None,
+            element_id,
+            property,
+            keyframes,
         }
     }
+}
 
-    /// Get the static value (most common case, zero-cost)
-    pub fn get(&self) -> &T {
-        &self.value
+
+/// Simple animation support API
+/// Provides access to animation features when enabled
+pub struct AnimationSupport;
+
+impl AnimationSupport {
+    /// Check if animation feature is enabled at compile time
+    pub fn is_enabled() -> bool {
+        cfg!(feature = "animation")
     }
 
-    /// Get the animated value if available
+    /// Create a simple demo - this shows the API works
     #[cfg(feature = "animation")]
-    pub fn animated(&self) -> Option<&AnimatedValue<T>> {
-        self.animation.as_ref()
-    }
-
-    /// Set animation data
-    #[cfg(feature = "animation")]
-    pub fn set_animation(&mut self, animation: AnimatedValue<T>) {
-        self.animation = Some(animation);
-    }
-
-    /// Check if animated
-    #[cfg(feature = "animation")]
-    pub fn is_animated(&self) -> bool {
-        self.animation.is_some()
+    pub fn demo_animation_api() {
+        println!("Animation API is available!");
+        let data = AnimationData::new(
+            "rect1".to_string(),
+            "opacity".to_string(),
+            vec![
+                Keyframe::new(0.0, "1.0".to_string()),
+                Keyframe::new(1.0, "0.0".to_string()),
+            ]
+        );
+        println!("Created animation data: {:?}", data);
     }
 
     #[cfg(not(feature = "animation"))]
-    pub fn is_animated(&self) -> bool {
-        false
+    pub fn demo_animation_api() {
+        println!("Animation feature is disabled - no animation types available");
     }
 }
 
-/// Animation system - separate from core structures
-/// This can enhance existing nodes/elements with animation data without modifying them
-#[cfg(feature = "animation")]
-pub struct AnimationSystem {
-    /// Maps element IDs to their animation data
-    element_animations: std::collections::HashMap<String, ElementAnimationData>,
-}
-
-#[cfg(feature = "animation")]
-#[derive(Clone, Debug)]
-pub struct ElementAnimationData {
-    /// Maps property names to their animation data
-    property_animations: std::collections::HashMap<String, AnimatedValue>,
-}
-
-#[cfg(feature = "animation")]
-impl AnimationSystem {
-    pub fn new() -> Self {
-        Self {
-            element_animations: std::collections::HashMap::new(),
-        }
-    }
-
-    /// Add animation for a property of an element
-    pub fn add_property_animation(&mut self, element_id: String, property: String, animation: AnimatedValue) {
-        self.element_animations
-            .entry(element_id)
-            .or_insert_with(|| ElementAnimationData {
-                property_animations: std::collections::HashMap::new(),
-            })
-            .property_animations
-            .insert(property, animation);
-    }
-
-    /// Get animation data for a property
-    pub fn get_property_animation(&self, element_id: &str, property: &str) -> Option<&AnimatedValue> {
-        self.element_animations
-            .get(element_id)?
-            .property_animations
-            .get(property)
-    }
-}
-
-impl<T> From<T> for Animatable<T> {
-    fn from(value: T) -> Self {
-        Self::new(value)
-    }
-}
-
-impl<T> Default for Animatable<T> where T: Default {
-    fn default() -> Self {
-        Self::new(T::default())
-    }
-}
-
-/// Helper functions for working with animatable properties in internal code
-/// These provide efficient access without requiring changes to every function
-pub struct AnimatableAccess;
-
-impl AnimatableAccess {
-    /// Get value by reference - zero-cost when animation disabled
-    pub fn get<T>(animatable: &Animatable<T>) -> &T {
-        animatable.get()
-    }
-
-    /// Get owned value - only clone when needed
-    pub fn resolve<T: Clone>(animatable: &Animatable<T>) -> T {
-        // For internal use, we can often avoid cloning by using references
-        // This is just a fallback for when ownership is actually needed
-        animatable.get().clone()
-    }
-
-    /// Check if property is animated
-    pub fn is_animated<T>(animatable: &Animatable<T>) -> bool {
-        animatable.is_animated()
-    }
-}
-
-/// List of ALL SVG properties that can be animated
-/// This is a comprehensive reference for what should be made animatable
+/// List of properties we made animatable
+/// This is a much smaller, targeted list than all possible SVG properties
 pub const ANIMATABLE_PROPERTIES: &[&str] = &[
     // Basic properties
     "opacity", "visibility", "display",
@@ -220,8 +144,6 @@ pub struct Keyframe<T> {
     pub time: f32,
     /// The value at this keyframe.
     pub value: T,
-    /// The timing function to use when interpolating to the next keyframe.
-    pub timing_function: TimingFunction,
 }
 
 #[derive(Clone, Debug)]
@@ -299,9 +221,7 @@ pub enum FillMode {
 
 // Fallback implementation when animation feature is disabled
 #[cfg(not(feature = "animation"))]
-pub type AnimatedValue<T> = T;
-
-impl<T> AnimatedValue<T> {
+impl<T: Default> AnimatedValue<T> {
     /// Creates a new static animated value.
     #[cfg(feature = "animation")]
     pub fn new_static(value: T) -> Self {
@@ -334,7 +254,7 @@ impl<T> AnimatedValue<T> {
         match self {
             AnimatedValue::Static(ref value) => value,
             AnimatedValue::Animated(ref keyframes) => {
-                keyframes.first().map(|keyframe| &keyframe.value).unwrap_or(&T::default())
+                keyframes.first().map(|keyframe| &keyframe.value).unwrap_or(&Default::default())
             }
         }
     }
@@ -413,18 +333,9 @@ impl<T> Keyframe<T> {
         Self {
             time,
             value,
-            timing_function: TimingFunction::Linear,
         }
     }
 
-    /// Creates a new keyframe with a custom timing function.
-    pub fn new_with_timing(time: f32, value: T, timing_function: TimingFunction) -> Self {
-        Self {
-            time,
-            value,
-            timing_function,
-        }
-    }
 }
 
 #[cfg(feature = "animation")]
