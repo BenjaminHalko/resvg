@@ -1,10 +1,17 @@
 alignment-baseline
 amplitude
+animate
+animateColor
+animateMotion
+animateTransform
 azimuth
 background-color
 baseFrequency
 baseline-shift
 bias
+begin
+by
+calcMode
 class
 clip
 clip-path
@@ -21,6 +28,8 @@ d
 diffuseConstant
 direction
 display
+dur
+end
 divisor
 dominant-baseline
 dx
@@ -52,6 +61,7 @@ font-variant-ligatures
 font-variant-numeric
 font-variant-position
 font-weight
+from
 fr
 fx
 fy
@@ -75,6 +85,8 @@ k4
 kernelMatrix
 kernelUnitLength
 kerning
+keySplines
+keyTimes
 lengthAdjust
 letter-spacing
 lighting-color
@@ -132,6 +144,9 @@ refX
 refY
 requiredExtensions
 requiredFeatures
+repeatCount
+repeatDur
+restart
 result
 rotate
 rx
@@ -184,6 +199,7 @@ text-overflow
 text-rendering
 text-underline-position
 textLength
+to
 transform
 transform-box
 transform-origin

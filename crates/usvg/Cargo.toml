@@ -54,3 +54,6 @@ text = ["fontdb", "rustybuzz", "unicode-bidi", "unicode-script", "unicode-vo"]
 system-fonts = ["fontdb/fs", "fontdb/fontconfig"]
 # Enables font files memmaping for faster loading.
 memmap-fonts = ["fontdb/memmap"]
+# Enables SVG animation support.
+# Adds around 100KiB to your binary.
+animation = []

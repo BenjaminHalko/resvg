@@ -5,6 +5,9 @@ pub mod filter;
 mod geom;
 mod text;
 
+#[cfg(feature = "animation")]
+pub mod animation;
+
 use std::sync::Arc;
 
 pub use strict_num::{self, ApproxEqUlps, NonZeroPositiveF32, NormalizedF32, PositiveF32};
@@ -13,6 +16,9 @@ pub use tiny_skia_path;
 
 pub use self::geom::*;
 pub use self::text::*;
+
+#[cfg(feature = "animation")]
+pub use self::animation::*;
 
 use crate::OptionLog;
 
@@ -384,7 +390,7 @@ pub type StopOffset = NormalizedF32;
 pub struct Stop {
     pub(crate) offset: StopOffset,
     pub(crate) color: Color,
-    pub(crate) opacity: Opacity,
+    pub(crate) opacity: AnimatedValue<Opacity>,
 }
 
 impl Stop {
@@ -405,8 +411,14 @@ impl Stop {
     /// Gradient stop opacity.
     ///
     /// `stop-opacity` in SVG.
-    pub fn opacity(&self) -> Opacity {
-        self.opacity
+    pub fn opacity(&self) -> &Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    }
+
+    /// Gradient stop opacity (potentially animated).
+    #[cfg(feature = "animation")]
+    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
+        &self.opacity
     }
 }
 
@@ -542,10 +554,10 @@ impl Default for LineJoin {
 pub struct Stroke {
     pub(crate) paint: Paint,
     pub(crate) dasharray: Option<Vec<f32>>,
-    pub(crate) dashoffset: f32,
+    pub(crate) dashoffset: AnimatedValue<f32>,
     pub(crate) miterlimit: StrokeMiterlimit,
-    pub(crate) opacity: Opacity,
-    pub(crate) width: StrokeWidth,
+    pub(crate) opacity: AnimatedValue<Opacity>,
+    pub(crate) width: AnimatedValue<StrokeWidth>,
     pub(crate) linecap: LineCap,
     pub(crate) linejoin: LineJoin,
     // Whether the current stroke needs to be resolved relative
@@ -566,7 +578,13 @@ impl Stroke {
 
     /// Stroke dash offset.
     pub fn dashoffset(&self) -> f32 {
-        self.dashoffset
+        *self.dashoffset.as_static().unwrap_or(&0.0)
+    }
+
+    /// Stroke dash offset (potentially animated).
+    #[cfg(feature = "animation")]
+    pub fn animated_dashoffset(&self) -> &AnimatedValue<f32> {
+        &self.dashoffset
     }
 
     /// Stroke miter limit.
@@ -575,13 +593,25 @@ impl Stroke {
     }
 
     /// Stroke opacity.
-    pub fn opacity(&self) -> Opacity {
-        self.opacity
+    pub fn opacity(&self) -> &Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    }
+
+    /// Stroke opacity (potentially animated).
+    #[cfg(feature = "animation")]
+    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
+        &self.opacity
     }
 
     /// Stroke width.
     pub fn width(&self) -> StrokeWidth {
-        self.width
+        *self.width.as_static().unwrap_or(&StrokeWidth::new(1.0).unwrap())
+    }
+
+    /// Stroke width (potentially animated).
+    #[cfg(feature = "animation")]
+    pub fn animated_width(&self) -> &AnimatedValue<StrokeWidth> {
+        &self.width
     }
 
     /// Stroke linecap.
@@ -657,7 +687,7 @@ pub(crate) enum ContextElement {
 #[derive(Clone, Debug)]
 pub struct Fill {
     pub(crate) paint: Paint,
-    pub(crate) opacity: Opacity,
+    pub(crate) opacity: AnimatedValue<Opacity>,
     pub(crate) rule: FillRule,
     // Whether the current fill needs to be resolved relative
     // to a context element.
@@ -671,8 +701,14 @@ impl Fill {
     }
 
     /// Fill opacity.
-    pub fn opacity(&self) -> Opacity {
-        self.opacity
+    pub fn opacity(&self) -> &Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    }
+
+    /// Fill opacity (potentially animated).
+    #[cfg(feature = "animation")]
+    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
+        &self.opacity
     }
 
     /// Fill rule.
@@ -685,7 +721,7 @@ impl Default for Fill {
     fn default() -> Self {
         Fill {
             paint: Paint::Color(Color::black()),
-            opacity: Opacity::ONE,
+            opacity: AnimatedValue::new_static(Opacity::ONE),
             rule: FillRule::default(),
             context_element: None,
         }
@@ -996,7 +1032,7 @@ pub struct Group {
     pub(crate) id: String,
     pub(crate) transform: Transform,
     pub(crate) abs_transform: Transform,
-    pub(crate) opacity: Opacity,
+    pub(crate) opacity: AnimatedValue<Opacity>,
     pub(crate) blend_mode: BlendMode,
     pub(crate) isolate: bool,
     pub(crate) clip_path: Option<Arc<ClipPath>>,
@@ -1067,8 +1103,14 @@ impl Group {
     ///
     /// After the group is rendered we should combine
     /// it with a parent group using the specified opacity.
-    pub fn opacity(&self) -> Opacity {
-        self.opacity
+    pub fn opacity(&self) -> &Opacity {
+        self.opacity.as_static().unwrap_or(&Opacity::ONE)
+    }
+
+    /// Group opacity (potentially animated).
+    #[cfg(feature = "animation")]
+    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
+        &self.opacity
     }
 
     /// Group blend mode.
@@ -1160,7 +1202,7 @@ impl Group {
     /// Checks if this group should be isolated during rendering.
     pub fn should_isolate(&self) -> bool {
         self.isolate
-            || self.opacity != Opacity::ONE
+            || self.opacity() != &Opacity::ONE
             || self.clip_path.is_some()
             || self.mask.is_some()
             || !self.filters.is_empty()

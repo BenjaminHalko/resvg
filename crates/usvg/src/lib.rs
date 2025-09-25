@@ -62,6 +62,10 @@ pub use parser::*;
 pub use text::*;
 pub use tree::*;
 
+// Re-export animation types for convenience
+#[cfg(feature = "animation")]
+pub use tree::animation::{AnimatedValue, Keyframe, TimingFunction, Animation, AnimationDirection, FillMode, StepPosition};
+
 pub use roxmltree;
 
 #[cfg(feature = "text")]
