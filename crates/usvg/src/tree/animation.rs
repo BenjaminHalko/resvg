@@ -28,10 +28,10 @@ pub(crate) enum AnimationValue {
     String(String), // fallback for unparsed values
 }
 
-/// Internal animation data structure - not exposed to public API
+/// Internal animation data structure - accessible via public API for animation data
 #[derive(Clone, Debug)]
 #[cfg(feature = "animation")]
-pub(crate) struct AnimationData {
+pub struct AnimationData {
     /// Element ID this animation applies to
     pub(crate) element_id: String,
     /// Property being animated (internal use only)
@@ -74,11 +74,24 @@ impl AnimationSupport {
         false
     }
 
+    /// Get animation data for a specific element and property
+    /// Returns the parsed animation values as proper usvg types
+    #[cfg(feature = "animation")]
+    pub fn get_animation_data<T>(element_id: &str, property: &str) -> Option<Vec<crate::tree::animation::AnimationData>> {
+        crate::parser::animation::animation_parser::get_animation_data(element_id, property)
+    }
+
+    #[cfg(not(feature = "animation"))]
+    pub fn get_animation_data<T>(_element_id: &str, _property: &str) -> Option<Vec<crate::tree::animation::AnimationData>> {
+        None
+    }
+
     /// Demo function showing the animation API is available
     #[cfg(feature = "animation")]
     pub fn demo() {
         println!("Animation API is available!");
         println!("Use has_animations(element_id) to check if an element has animations");
+        println!("Use get_animation_data(element_id, property) to get parsed animation values");
         println!("Internal parser extracts animation data from SVG elements");
     }
 
