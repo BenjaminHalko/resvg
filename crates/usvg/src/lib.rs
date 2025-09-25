@@ -69,3 +69,7 @@ pub use fontdb;
 
 pub use writer::WriteOptions;
 pub use xmlwriter::Indent;
+
+// Re-export animation types when the feature is enabled
+#[cfg(feature = "animation")]
+pub use tree::{AnimatedValue, Keyframe};

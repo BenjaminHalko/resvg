@@ -639,6 +639,138 @@ impl Default for FillRule {
     }
 }
 
+/// A keyframe for animations.
+///
+/// Contains a time offset and the animated value.
+#[cfg(feature = "animation")]
+#[derive(Clone, Debug)]
+pub struct Keyframe<T> {
+    /// Time offset for this keyframe (0.0 to 1.0).
+    pub offset: f32,
+    /// The animated value at this time.
+    pub value: T,
+}
+
+#[cfg(feature = "animation")]
+impl<T> Keyframe<T> {
+    /// Creates a new keyframe.
+    pub fn new(offset: f32, value: T) -> Self {
+        Self {
+            offset: offset.max(0.0).min(1.0),
+            value,
+        }
+    }
+}
+
+/// An animated value that can be either a single static value or a series of keyframes.
+///
+/// This enum abstracts over whether a property is animated or not, allowing
+/// the same API to work for both static and animated properties.
+#[cfg(feature = "animation")]
+#[derive(Clone, Debug)]
+pub enum AnimatedValue<T> {
+    /// A single, static value (no animation).
+    Static(T),
+    /// A series of keyframes defining the animation.
+    Animated(Vec<Keyframe<T>>),
+}
+
+#[cfg(feature = "animation")]
+impl<T> AnimatedValue<T> {
+    /// Creates a static animated value.
+    pub fn static_value(value: T) -> Self {
+        Self::Static(value)
+    }
+
+    /// Creates an animated value from keyframes.
+    pub fn animated(keyframes: Vec<Keyframe<T>>) -> Self {
+        Self::Animated(keyframes)
+    }
+
+    /// Returns true if this is a static value.
+    pub fn is_static(&self) -> bool {
+        matches!(self, Self::Static(_))
+    }
+
+    /// Returns true if this is an animated value.
+    pub fn is_animated(&self) -> bool {
+        matches!(self, Self::Animated(_))
+    }
+
+    /// Gets the static value if this is static, None otherwise.
+    pub fn as_static(&self) -> Option<&T> {
+        match self {
+            Self::Static(ref value) => Some(value),
+            Self::Animated(_) => None,
+        }
+    }
+
+    /// Gets the keyframes if this is animated, None otherwise.
+    pub fn as_animated(&self) -> Option<&[Keyframe<T>]> {
+        match self {
+            Self::Static(_) => None,
+            Self::Animated(ref keyframes) => Some(keyframes),
+        }
+    }
+
+    /// Gets the value at a specific time (0.0 to 1.0), interpolating between keyframes if needed.
+    pub fn value_at(&self, time: f32) -> Option<&T>
+    where
+        T: Clone,
+    {
+        match self {
+            Self::Static(ref value) => Some(value),
+            Self::Animated(ref keyframes) => {
+                if keyframes.is_empty() {
+                    return None;
+                }
+
+                // Clamp time to 0-1 range
+                let time = time.max(0.0).min(1.0);
+
+                // Find the appropriate keyframes to interpolate between
+                if let Some(keyframe) = keyframes.last() {
+                    if time >= keyframe.offset {
+                        return Some(&keyframe.value);
+                    }
+                }
+
+                for (i, keyframe) in keyframes.iter().enumerate() {
+                    if time <= keyframe.offset {
+                        if i == 0 {
+                            return Some(&keyframe.value);
+                        } else {
+                            // Interpolate between previous and current keyframe
+                            let prev = &keyframes[i - 1];
+                            let curr = keyframe;
+                            // For now, return the closer keyframe
+                            // TODO: Implement proper interpolation
+                            return if (time - prev.offset) < (curr.offset - time) {
+                                Some(&prev.value)
+                            } else {
+                                Some(&curr.value)
+                            };
+                        }
+                    }
+                }
+
+                // Fallback to first keyframe
+                keyframes.first().map(|k| &k.value)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "animation")]
+impl<T> Default for AnimatedValue<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self::Static(T::default())
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ContextElement {
     /// The current context element is a use node. Since we can get
@@ -996,6 +1128,9 @@ pub struct Group {
     pub(crate) id: String,
     pub(crate) transform: Transform,
     pub(crate) abs_transform: Transform,
+    #[cfg(feature = "animation")]
+    pub(crate) opacity: AnimatedValue<Opacity>,
+    #[cfg(not(feature = "animation"))]
     pub(crate) opacity: Opacity,
     pub(crate) blend_mode: BlendMode,
     pub(crate) isolate: bool,
@@ -1020,6 +1155,9 @@ impl Group {
             id: String::new(),
             transform: Transform::default(),
             abs_transform: Transform::default(),
+            #[cfg(feature = "animation")]
+            opacity: AnimatedValue::static_value(Opacity::ONE),
+            #[cfg(not(feature = "animation"))]
             opacity: Opacity::ONE,
             blend_mode: BlendMode::Normal,
             isolate: false,
@@ -1067,6 +1205,16 @@ impl Group {
     ///
     /// After the group is rendered we should combine
     /// it with a parent group using the specified opacity.
+    #[cfg(feature = "animation")]
+    pub fn opacity(&self) -> &AnimatedValue<Opacity> {
+        &self.opacity
+    }
+
+    /// Group opacity.
+    ///
+    /// After the group is rendered we should combine
+    /// it with a parent group using the specified opacity.
+    #[cfg(not(feature = "animation"))]
     pub fn opacity(&self) -> Opacity {
         self.opacity
     }
@@ -1160,6 +1308,9 @@ impl Group {
     /// Checks if this group should be isolated during rendering.
     pub fn should_isolate(&self) -> bool {
         self.isolate
+            #[cfg(feature = "animation")]
+            || !self.opacity.is_static() || self.opacity.as_static().map_or(false, |o| *o != Opacity::ONE)
+            #[cfg(not(feature = "animation"))]
             || self.opacity != Opacity::ONE
             || self.clip_path.is_some()
             || self.mask.is_some()
@@ -1242,7 +1393,13 @@ impl Default for PaintOrder {
 pub struct Path {
     pub(crate) id: String,
     pub(crate) visible: bool,
+    #[cfg(feature = "animation")]
+    pub(crate) fill: Option<AnimatedValue<Fill>>,
+    #[cfg(not(feature = "animation"))]
     pub(crate) fill: Option<Fill>,
+    #[cfg(feature = "animation")]
+    pub(crate) stroke: Option<AnimatedValue<Stroke>>,
+    #[cfg(not(feature = "animation"))]
     pub(crate) stroke: Option<Stroke>,
     pub(crate) paint_order: PaintOrder,
     pub(crate) rendering_mode: ShapeRendering,
@@ -1328,11 +1485,25 @@ impl Path {
     }
 
     /// Fill style.
+    #[cfg(feature = "animation")]
+    pub fn fill(&self) -> Option<&AnimatedValue<Fill>> {
+        self.fill.as_ref()
+    }
+
+    /// Fill style.
+    #[cfg(not(feature = "animation"))]
     pub fn fill(&self) -> Option<&Fill> {
         self.fill.as_ref()
     }
 
     /// Stroke style.
+    #[cfg(feature = "animation")]
+    pub fn stroke(&self) -> Option<&AnimatedValue<Stroke>> {
+        self.stroke.as_ref()
+    }
+
+    /// Stroke style.
+    #[cfg(not(feature = "animation"))]
     pub fn stroke(&self) -> Option<&Stroke> {
         self.stroke.as_ref()
     }
@@ -1400,15 +1571,24 @@ impl Path {
         self.abs_stroke_bounding_box
     }
 
-    fn calculate_stroke_bbox(stroke: Option<&Stroke>, path: &tiny_skia_path::Path) -> Option<Rect> {
-        let mut stroke = stroke?.to_tiny_skia();
+    fn calculate_stroke_bbox(
+        #[cfg(feature = "animation")] stroke: Option<&AnimatedValue<Stroke>>,
+        #[cfg(not(feature = "animation"))] stroke: Option<&Stroke>,
+        path: &tiny_skia_path::Path
+    ) -> Option<Rect> {
+        #[cfg(feature = "animation")]
+        let stroke_ref = stroke?.as_static()?;
+        #[cfg(not(feature = "animation"))]
+        let stroke_ref = stroke?;
+
+        let mut stroke_obj = stroke_ref.to_tiny_skia();
         // According to the spec, dash should not be accounted during bbox calculation.
-        stroke.dash = None;
+        stroke_obj.dash = None;
 
         // TODO: avoid for round and bevel caps
 
         // Expensive, but there is not much we can do about it.
-        if let Some(stroked_path) = path.stroke(&stroke, 1.0) {
+        if let Some(stroked_path) = path.stroke(&stroke_obj, 1.0) {
             return stroked_path.compute_tight_bounds();
         }
 
@@ -1416,11 +1596,27 @@ impl Path {
     }
 
     fn subroots(&self, f: &mut dyn FnMut(&Group)) {
-        if let Some(Paint::Pattern(ref patt)) = self.fill.as_ref().map(|f| &f.paint) {
-            f(patt.root());
+        #[cfg(feature = "animation")]
+        {
+            if let Some(fill) = &self.fill {
+                if let Some(Fill { paint: Paint::Pattern(ref patt), .. }) = fill.as_static() {
+                    f(patt.root());
+                }
+            }
+            if let Some(stroke) = &self.stroke {
+                if let Some(Stroke { paint: Paint::Pattern(ref patt), .. }) = stroke.as_static() {
+                    f(patt.root());
+                }
+            }
         }
-        if let Some(Paint::Pattern(ref patt)) = self.stroke.as_ref().map(|f| &f.paint) {
-            f(patt.root());
+        #[cfg(not(feature = "animation"))]
+        {
+            if let Some(Fill { paint: Paint::Pattern(ref patt), .. }) = &self.fill {
+                f(patt.root());
+            }
+            if let Some(Stroke { paint: Paint::Pattern(ref patt), .. }) = &self.stroke {
+                f(patt.root());
+            }
         }
     }
 }

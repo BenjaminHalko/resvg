@@ -9,6 +9,8 @@ use crate::{
     ApproxEqUlps, Color, Fill, FillRule, LineCap, LineJoin, Opacity, Paint, Stroke,
     StrokeMiterlimit, Units,
 };
+#[cfg(feature = "animation")]
+use crate::tree::{AnimatedValue, Keyframe};
 
 impl<'a, 'input: 'a> FromValue<'a, 'input> for LineCap {
     fn parse(_: SvgNode, _: AId, value: &str) -> Option<Self> {
@@ -86,6 +88,188 @@ pub(crate) fn resolve_fill(
         rule: node.find_attribute(AId::FillRule).unwrap_or_default(),
         context_element,
     })
+}
+
+#[cfg(feature = "animation")]
+pub(crate) fn resolve_fill_with_animations(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<AnimatedValue<Fill>> {
+    // For animation support, we need to check if there are animations
+    // and potentially return an AnimatedValue instead of a static Fill
+    let animations = super::animation::parse_animations(node);
+
+    if !animations.is_empty() {
+        // If there are animations, create an AnimatedValue with the static properties
+        // as the base value, but we would need to integrate the animation values
+        // This is a simplified implementation - in a real implementation,
+        // we'd need to merge the animated properties with the static ones
+        let static_fill = resolve_fill_inner(node, has_bbox, state, cache)?;
+        return Some(AnimatedValue::static_value(static_fill));
+    }
+
+    let static_fill = resolve_fill_inner(node, has_bbox, state, cache)?;
+    Some(AnimatedValue::static_value(static_fill))
+}
+
+#[cfg(feature = "animation")]
+fn resolve_fill_inner(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<Fill> {
+    if state.parent_clip_path.is_some() {
+        // A `clipPath` child can be filled only with a black color.
+        return Some(Fill {
+            paint: Paint::Color(Color::black()),
+            opacity: Opacity::ONE,
+            rule: node.find_attribute(AId::ClipRule).unwrap_or_default(),
+            context_element: None,
+        });
+    }
+
+    let mut sub_opacity = Opacity::ONE;
+    let (paint, context_element) =
+        if let Some(n) = node.ancestors().find(|n| n.has_attribute(AId::Fill)) {
+            let value: &str = n.attribute(AId::Fill)?;
+            convert_paint(
+                node,
+                value,
+                AId::Fill,
+                has_bbox,
+                state,
+                &mut sub_opacity,
+                cache,
+            )?
+        } else {
+            (Paint::Color(Color::black()), None)
+        };
+
+    let fill_opacity = node
+        .find_attribute::<Opacity>(AId::FillOpacity)
+        .unwrap_or(Opacity::ONE);
+
+    Some(Fill {
+        paint,
+        opacity: sub_opacity * fill_opacity,
+        rule: node.find_attribute(AId::FillRule).unwrap_or_default(),
+        context_element,
+    })
+}
+
+#[cfg(feature = "animation")]
+pub(crate) fn resolve_fill_animated(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<AnimatedValue<Fill>> {
+    if state.parent_clip_path.is_some() {
+        // A `clipPath` child can be filled only with a black color.
+        return Some(AnimatedValue::static_value(Fill {
+            paint: Paint::Color(Color::black()),
+            opacity: Opacity::ONE,
+            rule: node.find_attribute(AId::ClipRule).unwrap_or_default(),
+            context_element: None,
+        }));
+    }
+
+    let mut sub_opacity = AnimatedValue::static_value(Opacity::ONE);
+    let (paint, context_element) =
+        if let Some(n) = node.ancestors().find(|n| n.has_attribute(AId::Fill)) {
+            let value: &str = n.attribute(AId::Fill)?;
+            convert_paint_animated(
+                node,
+                value,
+                AId::Fill,
+                has_bbox,
+                state,
+                &mut sub_opacity,
+                cache,
+            )?
+        } else {
+            (AnimatedValue::static_value(Paint::Color(Color::black())), None)
+        };
+
+    let fill_opacity = node
+        .find_attribute::<Opacity>(AId::FillOpacity)
+        .map(AnimatedValue::static_value)
+        .unwrap_or(AnimatedValue::static_value(Opacity::ONE));
+
+    Some(AnimatedValue::static_value(Fill {
+        paint: paint.as_static().cloned().unwrap_or(Paint::Color(Color::black())),
+        opacity: sub_opacity.as_static().cloned().unwrap_or(Opacity::ONE) * fill_opacity.as_static().cloned().unwrap_or(Opacity::ONE),
+        rule: node.find_attribute(AId::FillRule).unwrap_or_default(),
+        context_element,
+    }))
+}
+
+#[cfg(feature = "animation")]
+pub(crate) fn resolve_stroke_animated(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<AnimatedValue<Stroke>> {
+    if state.parent_clip_path.is_some() {
+        // A `clipPath` child cannot be stroked.
+        return None;
+    }
+
+    let mut sub_opacity = AnimatedValue::static_value(Opacity::ONE);
+    let (paint, context_element) =
+        if let Some(n) = node.ancestors().find(|n| n.has_attribute(AId::Stroke)) {
+            let value: &str = n.attribute(AId::Stroke)?;
+            convert_paint_animated(
+                node,
+                value,
+                AId::Stroke,
+                has_bbox,
+                state,
+                &mut sub_opacity,
+                cache,
+            )?
+        } else {
+            return None;
+        };
+
+    let stroke_opacity = node
+        .find_attribute::<Opacity>(AId::StrokeOpacity)
+        .map(AnimatedValue::static_value)
+        .unwrap_or(AnimatedValue::static_value(Opacity::ONE));
+
+    let stroke_width = node
+        .find_attribute(AId::StrokeWidth)
+        .unwrap_or(StrokeMiterlimit::default());
+
+    Some(AnimatedValue::static_value(Stroke {
+        paint: paint.as_static().cloned().unwrap_or(Paint::Color(Color::black())),
+        dasharray: None, // TODO: implement dasharray parsing
+        dashoffset: node.find_attribute(AId::StrokeDashoffset).unwrap_or(0.0),
+        miterlimit: node.find_attribute(AId::StrokeMiterlimit).unwrap_or_default(),
+        opacity: sub_opacity.as_static().cloned().unwrap_or(Opacity::ONE) * stroke_opacity.as_static().cloned().unwrap_or(Opacity::ONE),
+        width: stroke_width,
+        linecap: node.find_attribute(AId::StrokeLinecap).unwrap_or_default(),
+        linejoin: node.find_attribute(AId::StrokeLinejoin).unwrap_or_default(),
+        context_element,
+    }))
+}
+
+#[cfg(feature = "animation")]
+fn convert_paint_animated(
+    node: SvgNode,
+    value: &str,
+    aid: AId,
+    has_bbox: bool,
+    state: &converter::State,
+    opacity: &mut AnimatedValue<Opacity>,
+    cache: &mut converter::Cache,
+) -> Option<(AnimatedValue<Paint>, Option<ContextElement>)> {
+    let paint = paint_server::convert(node, value, aid, has_bbox, state, opacity, cache)?;
+    Some((AnimatedValue::static_value(paint), None))
 }
 
 pub(crate) fn resolve_stroke(
