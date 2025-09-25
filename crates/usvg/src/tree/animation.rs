@@ -101,6 +101,71 @@ impl<T> Default for Animatable<T> where T: Default {
     }
 }
 
+/// List of ALL SVG properties that can be animated
+/// This is a comprehensive reference for what should be made animatable
+pub const ANIMATABLE_PROPERTIES: &[&str] = &[
+    // Basic properties
+    "opacity", "visibility", "display",
+
+    // Transform properties
+    "transform", "translate", "rotate", "scale", "skewX", "skewY", "matrix",
+
+    // Fill properties
+    "fill", "fill-opacity", "fill-rule",
+
+    // Stroke properties
+    "stroke", "stroke-width", "stroke-opacity", "stroke-dasharray", "stroke-dashoffset",
+    "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+
+    // Color properties
+    "color", "stop-color", "stop-opacity", "flood-color", "flood-opacity",
+    "lighting-color",
+
+    // Text properties
+    "font-size", "font-family", "font-weight", "font-style", "font-variant",
+    "font-stretch", "letter-spacing", "word-spacing", "text-decoration",
+    "text-anchor", "baseline-shift",
+
+    // Path properties
+    "d", "pathLength",
+
+    // Filter properties
+    "filter", "feBlend", "feColorMatrix", "feComponentTransfer", "feComposite",
+    "feConvolveMatrix", "feDiffuseLighting", "feDisplacementMap", "feDropShadow",
+    "feFlood", "feGaussianBlur", "feImage", "feMerge", "feMorphology", "feOffset",
+    "feSpecularLighting", "feTile", "feTurbulence",
+
+    // Gradient properties
+    "stop", "linearGradient", "radialGradient", "gradientTransform", "gradientUnits",
+
+    // Animation properties
+    "animate", "animateColor", "animateMotion", "animateTransform", "begin", "dur",
+    "end", "repeatCount", "repeatDur", "restart", "fill", "calcMode", "values",
+    "keyTimes", "keySplines", "from", "to", "by",
+
+    // Other properties
+    "clip-path", "mask", "viewBox", "preserveAspectRatio", "cx", "cy", "r", "rx", "ry",
+    "x", "y", "width", "height", "x1", "y1", "x2", "y2", "points", "marker-start",
+    "marker-mid", "marker-end", "markerHeight", "markerWidth", "markerUnits",
+    "patternUnits", "patternContentUnits", "patternTransform"
+];
+
+/// API for accessing keyframes and animation data
+/// Example usage:
+/// ```rust
+/// if let Some(animated_value) = fill.animated_opacity() {
+///     match animated_value {
+///         AnimatedValue::Static(value) => println!("Static: {:?}", value),
+///         AnimatedValue::Animated(keyframes) => {
+///             for keyframe in keyframes {
+///                 println!("Time: {}, Value: {:?}", keyframe.time, keyframe.value);
+///             }
+///         }
+///     }
+/// }
+/// ```
+
+
 #[derive(Clone, Debug)]
 #[cfg(feature = "animation")]
 pub struct Keyframe<T> {

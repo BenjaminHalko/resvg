@@ -1254,7 +1254,7 @@ impl Default for PaintOrder {
 #[derive(Clone, Debug)]
 pub struct Path {
     pub(crate) id: String,
-    pub(crate) visible: bool,
+    pub(crate) visible: Animatable<bool>,
     pub(crate) fill: Option<Fill>,
     pub(crate) stroke: Option<Stroke>,
     pub(crate) paint_order: PaintOrder,
@@ -1337,7 +1337,7 @@ impl Path {
 
     /// Element visibility.
     pub fn is_visible(&self) -> bool {
-        self.visible
+        self.visible.resolve()
     }
 
     /// Fill style.
@@ -1486,7 +1486,7 @@ impl std::fmt::Debug for ImageKind {
 #[derive(Clone, Debug)]
 pub struct Image {
     pub(crate) id: String,
-    pub(crate) visible: bool,
+    pub(crate) visible: Animatable<bool>,
     pub(crate) size: Size,
     pub(crate) rendering_mode: ImageRendering,
     pub(crate) kind: ImageKind,
@@ -1506,7 +1506,7 @@ impl Image {
 
     /// Element visibility.
     pub fn is_visible(&self) -> bool {
-        self.visible
+        self.visible.resolve()
     }
 
     /// The actual image size.
