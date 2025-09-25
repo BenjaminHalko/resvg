@@ -14,87 +14,102 @@ pub enum AnimatedValue<T> {
     Animated(Vec<Keyframe<T>>),
 }
 
-/// A targeted approach: only commonly animated properties are animatable.
-/// This reduces complexity while providing animation support for the most important cases.
+/// A cleaner animation architecture that addresses performance and complexity concerns:
+///
+/// Key Principles:
+/// 1. Keep core usvg structures unchanged - no massive refactoring
+/// 2. Animation is an optional overlay system, not embedded in core structures
+/// 3. Only commonly animated properties are made animatable (opacity, stroke, transforms)
+/// 4. Zero-cost when animation is disabled
+/// 5. Internal functions don't need to change
+
+/// Simple wrapper for commonly animated properties only
+/// This keeps the core structures clean while enabling animation for key properties
 #[derive(Clone, Debug)]
 pub struct Animatable<T> {
-    #[cfg(feature = "animation")]
-    value: AnimatedValue<T>,
-    #[cfg(not(feature = "animation"))]
     value: T,
+    #[cfg(feature = "animation")]
+    animation: Option<AnimatedValue<T>>,
 }
 
 impl<T> Animatable<T> {
-    /// Creates a new static animatable value.
     pub fn new(value: T) -> Self {
         Self {
-            #[cfg(feature = "animation")]
-            value: AnimatedValue::new_static(value),
-            #[cfg(not(feature = "animation"))]
             value,
+            #[cfg(feature = "animation")]
+            animation: None,
         }
     }
 
-    /// Gets the base value without cloning.
-    /// Most efficient for internal use.
+    /// Get the static value (most common case, zero-cost)
     pub fn get(&self) -> &T {
-        #[cfg(feature = "animation")]
-        { self.value.as_static() }
-        #[cfg(not(feature = "animation"))]
-        { &self.value }
+        &self.value
     }
 
-    /// Gets an owned copy - only clone when needed.
-    pub fn resolve(&self) -> T where T: Clone {
-        #[cfg(feature = "animation")]
-        { self.value.resolve() }
-        #[cfg(not(feature = "animation"))]
-        { self.value.clone() }
-    }
-
-    /// Gets the animation data if available.
+    /// Get the animated value if available
     #[cfg(feature = "animation")]
     pub fn animated(&self) -> Option<&AnimatedValue<T>> {
-        Some(&self.value)
+        self.animation.as_ref()
     }
 
-    /// Gets the animation data if available.
-    #[cfg(not(feature = "animation"))]
-    pub fn animated(&self) -> Option<&T> {
-        Some(&self.value)
+    /// Set animation data
+    #[cfg(feature = "animation")]
+    pub fn set_animation(&mut self, animation: AnimatedValue<T>) {
+        self.animation = Some(animation);
     }
 
-    /// Checks if this value has animation data.
+    /// Check if animated
     #[cfg(feature = "animation")]
     pub fn is_animated(&self) -> bool {
-        self.value.is_animated()
+        self.animation.is_some()
     }
 
-    /// Checks if this value has animation data.
     #[cfg(not(feature = "animation"))]
     pub fn is_animated(&self) -> bool {
         false
     }
 }
 
-/// Helper for internal functions: provides efficient access patterns
-/// This reduces the need to update every internal function.
-pub struct AnimatableHelper;
+/// Animation system - separate from core structures
+/// This can enhance existing nodes/elements with animation data without modifying them
+#[cfg(feature = "animation")]
+pub struct AnimationSystem {
+    /// Maps element IDs to their animation data
+    element_animations: std::collections::HashMap<String, ElementAnimationData>,
+}
 
-impl AnimatableHelper {
-    /// Get value by reference (zero-cost when animation disabled)
-    pub fn get<T>(animatable: &Animatable<T>) -> &T {
-        animatable.get()
+#[cfg(feature = "animation")]
+#[derive(Clone, Debug)]
+pub struct ElementAnimationData {
+    /// Maps property names to their animation data
+    property_animations: std::collections::HashMap<String, AnimatedValue>,
+}
+
+#[cfg(feature = "animation")]
+impl AnimationSystem {
+    pub fn new() -> Self {
+        Self {
+            element_animations: std::collections::HashMap::new(),
+        }
     }
 
-    /// Get owned value (only clone when needed)
-    pub fn resolve<T: Clone>(animatable: &Animatable<T>) -> T {
-        animatable.resolve()
+    /// Add animation for a property of an element
+    pub fn add_property_animation(&mut self, element_id: String, property: String, animation: AnimatedValue) {
+        self.element_animations
+            .entry(element_id)
+            .or_insert_with(|| ElementAnimationData {
+                property_animations: std::collections::HashMap::new(),
+            })
+            .property_animations
+            .insert(property, animation);
     }
 
-    /// Check if animated (zero-cost when animation disabled)
-    pub fn is_animated<T>(animatable: &Animatable<T>) -> bool {
-        animatable.is_animated()
+    /// Get animation data for a property
+    pub fn get_property_animation(&self, element_id: &str, property: &str) -> Option<&AnimatedValue> {
+        self.element_animations
+            .get(element_id)?
+            .property_animations
+            .get(property)
     }
 }
 
@@ -107,6 +122,29 @@ impl<T> From<T> for Animatable<T> {
 impl<T> Default for Animatable<T> where T: Default {
     fn default() -> Self {
         Self::new(T::default())
+    }
+}
+
+/// Helper functions for working with animatable properties in internal code
+/// These provide efficient access without requiring changes to every function
+pub struct AnimatableAccess;
+
+impl AnimatableAccess {
+    /// Get value by reference - zero-cost when animation disabled
+    pub fn get<T>(animatable: &Animatable<T>) -> &T {
+        animatable.get()
+    }
+
+    /// Get owned value - only clone when needed
+    pub fn resolve<T: Clone>(animatable: &Animatable<T>) -> T {
+        // For internal use, we can often avoid cloning by using references
+        // This is just a fallback for when ownership is actually needed
+        animatable.get().clone()
+    }
+
+    /// Check if property is animated
+    pub fn is_animated<T>(animatable: &Animatable<T>) -> bool {
+        animatable.is_animated()
     }
 }
 
