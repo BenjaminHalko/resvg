@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use std::time::Duration;
+use crate::{Opacity, Transform};
 
 /// Represents an animated value that can be either a single static value or a sequence of keyframes.
 #[derive(Clone, Debug)]
@@ -16,6 +17,17 @@ pub enum AnimatedValue<T> {
 /// A minimal animation system that doesn't break existing APIs
 /// Key insight: Keep core usvg structures unchanged, add animation as a separate layer
 
+/// Represents different types of animation values, parsed into proper usvg types
+#[derive(Clone, Debug)]
+#[cfg(feature = "animation")]
+pub(crate) enum AnimationValue {
+    Opacity(Opacity),
+    Transform(Transform),
+    Color(svgtypes::Color),
+    F32(f32),
+    String(String), // fallback for unparsed values
+}
+
 /// Internal animation data structure - not exposed to public API
 #[derive(Clone, Debug)]
 #[cfg(feature = "animation")]
@@ -24,13 +36,13 @@ pub(crate) struct AnimationData {
     pub(crate) element_id: String,
     /// Property being animated (internal use only)
     pub(crate) property: String,
-    /// Animation keyframes
-    pub(crate) keyframes: Vec<Keyframe<String>>, // Simplified for demo
+    /// Animation keyframes with properly parsed types
+    pub(crate) keyframes: Vec<Keyframe<AnimationValue>>,
 }
 
 #[cfg(feature = "animation")]
 impl AnimationData {
-    pub(crate) fn new(element_id: String, property: String, keyframes: Vec<Keyframe<String>>) -> Self {
+    pub(crate) fn new(element_id: String, property: String, keyframes: Vec<Keyframe<AnimationValue>>) -> Self {
         Self {
             element_id,
             property,

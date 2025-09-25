@@ -9,8 +9,8 @@ pub mod animation_parser {
 
     use crate::parser::svgtree::{AId, EId, SvgNode};
     use crate::parser::converter;
-    use crate::tree::animation::{AnimationData, Keyframe};
-    use crate::{Group};
+    use crate::tree::animation::{AnimationData, Keyframe, AnimationValue};
+    use crate::{Group, Opacity};
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -43,23 +43,35 @@ pub mod animation_parser {
         let from: Option<&str> = node.attribute(AId::From);
         let to: Option<&str> = node.attribute(AId::To);
 
-        // Parse keyframes
+        // Parse keyframes with proper types
         let keyframes = if let Some(values_str) = values_str {
-            parse_values_from_string(values_str)
+            if let Some(attribute_name) = attribute_name {
+                parse_values_from_string(attribute_name, values_str)
+            } else {
+                return None;
+            }
         } else if let (Some(from), Some(to)) = (from, to) {
-            vec![
-                Keyframe::new(0.0, from.to_string()),
-                Keyframe::new(1.0, to.to_string()),
-            ]
+            if let Some(attribute_name) = attribute_name {
+                vec![
+                    Keyframe::new(0.0, parse_animation_value(attribute_name, from)),
+                    Keyframe::new(1.0, parse_animation_value(attribute_name, to)),
+                ]
+            } else {
+                return None;
+            }
         } else {
             return None; // No animation data
         };
 
-        Some(AnimationData::new(
-            get_target_element_id(&node),
-            attribute_name.unwrap_or("fill").to_string(),
-            keyframes,
-        ))
+        if let Some(attribute_name) = attribute_name {
+            Some(AnimationData::new(
+                get_target_element_id(&node),
+                attribute_name.to_string(),
+                keyframes,
+            ))
+        } else {
+            None
+        }
     }
 
     fn convert_animate_color(node: SvgNode) -> Option<AnimationData> {
@@ -70,13 +82,17 @@ pub mod animation_parser {
             .map(|attr| attr.value.as_str());
         let values_str: Option<&str> = node.attribute(AId::Values);
 
-        if let Some(values_str) = values_str {
-            let keyframes = parse_values_from_string(values_str);
-            Some(AnimationData::new(
-                get_target_element_id(&node),
-                attribute_name.unwrap_or("fill").to_string(),
-                keyframes,
-            ))
+        if let Some(attribute_name) = attribute_name {
+            if let Some(values_str) = values_str {
+                let keyframes = parse_values_from_string(&attribute_name, values_str);
+                Some(AnimationData::new(
+                    get_target_element_id(&node),
+                    attribute_name.to_string(),
+                    keyframes,
+                ))
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -88,7 +104,7 @@ pub mod animation_parser {
         let path: Option<&str> = node.attribute(AId::Path);
 
         if let Some(values_str) = values_str {
-            let keyframes = parse_values_from_string(values_str);
+            let keyframes = parse_values_from_string("transform", values_str);
             Some(AnimationData::new(
                 get_target_element_id(&node),
                 "transform".to_string(),
@@ -97,8 +113,8 @@ pub mod animation_parser {
         } else if let Some(path) = path {
             // For path-based motion, create keyframes along the path
             let keyframes = vec![
-                Keyframe::new(0.0, "0,0".to_string()),
-                Keyframe::new(1.0, path.to_string()),
+                Keyframe::new(0.0, parse_animation_value("transform", "0,0")),
+                Keyframe::new(1.0, parse_animation_value("transform", path)),
             ];
             Some(AnimationData::new(
                 get_target_element_id(&node),
@@ -116,12 +132,14 @@ pub mod animation_parser {
         let from: Option<&str> = node.attribute(AId::From);
         let to: Option<&str> = node.attribute(AId::To);
 
+        let property_name = transform_type.unwrap_or("translate");
+
         let keyframes = if let Some(values_str) = values_str {
-            parse_values_from_string(values_str)
+            parse_values_from_string(property_name, values_str)
         } else if let (Some(from), Some(to)) = (from, to) {
             vec![
-                Keyframe::new(0.0, from.to_string()),
-                Keyframe::new(1.0, to.to_string()),
+                Keyframe::new(0.0, parse_animation_value(property_name, from)),
+                Keyframe::new(1.0, parse_animation_value(property_name, to)),
             ]
         } else {
             return None;
@@ -129,7 +147,7 @@ pub mod animation_parser {
 
         Some(AnimationData::new(
             get_target_element_id(&node),
-            transform_type.unwrap_or("translate").to_string(),
+            property_name.to_string(),
             keyframes,
         ))
     }
@@ -149,14 +167,53 @@ pub mod animation_parser {
         }
     }
 
-    /// Parse a list of values from a string into keyframes
-    fn parse_values_from_string(values_str: &str) -> Vec<Keyframe<String>> {
+    /// Parse animation values into proper usvg types based on the property
+    fn parse_animation_value(property: &str, value: &str) -> AnimationValue {
+        match property {
+            "opacity" => {
+                // Parse opacity values - try as percentage first, then as raw number
+                if let Some(percent_str) = value.strip_suffix('%') {
+                    if let Ok(percent) = percent_str.parse::<f32>() {
+                        AnimationValue::Opacity(Opacity::new_clamped(percent / 100.0))
+                    } else {
+                        AnimationValue::String(value.to_string())
+                    }
+                } else if let Ok(opacity) = value.parse::<f32>() {
+                    AnimationValue::Opacity(Opacity::new_clamped(opacity))
+                } else {
+                    AnimationValue::String(value.to_string())
+                }
+            },
+            "transform" => {
+                // For now, store transform as string - proper parsing is complex
+                // In a full implementation, this would parse into Transform
+                AnimationValue::String(value.to_string())
+            },
+            "fill" | "stroke" | "stop-color" => {
+                // For now, store color as string - proper parsing is complex
+                // In a full implementation, this would parse into Color
+                AnimationValue::String(value.to_string())
+            },
+            _ => {
+                // Try to parse as number first
+                if let Ok(num) = value.parse::<f32>() {
+                    AnimationValue::F32(num)
+                } else {
+                    AnimationValue::String(value.to_string())
+                }
+            }
+        }
+    }
+
+    /// Parse a list of values from a string into keyframes with proper types
+    fn parse_values_from_string(property: &str, values_str: &str) -> Vec<Keyframe<AnimationValue>> {
         // Split by semicolon or whitespace
         let values: Vec<&str> = values_str.split(';').flat_map(|s| s.split_whitespace()).collect();
         let len = values.len();
         values.into_iter().enumerate().map(|(i, value)| {
             let time = i as f32 / (len - 1).max(1) as f32;
-            Keyframe::new(time, value.trim().to_string())
+            let parsed_value = parse_animation_value(property, value.trim());
+            Keyframe::new(time, parsed_value)
         }).collect()
     }
 
