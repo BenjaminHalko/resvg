@@ -64,7 +64,7 @@ pub use tree::*;
 
 // Re-export animation types for convenience
 #[cfg(feature = "animation")]
-pub use tree::animation::{AnimatedValue, Keyframe, TimingFunction, Animation, AnimationDirection, FillMode, StepPosition};
+pub use tree::animation::{AnimatedValue, Keyframe, TimingFunction, Animation, AnimationDirection, FillMode, StepPosition, AnimationData, AnimationSupport};
 
 pub use roxmltree;
 

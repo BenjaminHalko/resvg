@@ -584,6 +584,16 @@ pub(crate) fn convert_element(node: SvgNode, state: &State, cache: &mut Cache, p
         return;
     }
 
+    // Handle animation elements - parse and store animation data
+    #[cfg(feature = "animation")]
+    if matches!(tag_name, EId::Animate | EId::AnimateColor | EId::AnimateMotion | EId::AnimateTransform) {
+        if let Some(animation_data) = super::animation::animation_parser::convert(node, state, cache, parent) {
+            // Store animation data for later use
+            super::animation::animation_parser::store_animation_data(animation_data);
+        }
+        return; // Animation elements don't create visual elements
+    }
+
     if let Some(g) = convert_group(node, state, false, cache, parent, &|cache, g| {
         convert_element_impl(tag_name, node, state, cache, g);
     }) {
