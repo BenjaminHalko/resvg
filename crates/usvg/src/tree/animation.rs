@@ -15,57 +15,35 @@ pub enum AnimatedValue<T> {
 }
 
 /// A generic wrapper that makes any value potentially animatable.
+/// This is always just a simple wrapper around T, regardless of animation feature.
 #[derive(Clone, Debug)]
-pub struct Animatable<T> {
-    #[cfg(feature = "animation")]
-    value: AnimatedValue<T>,
-    #[cfg(not(feature = "animation"))]
-    value: T,
-}
+pub struct Animatable<T>(T);
 
 impl<T> Animatable<T> {
     /// Creates a new static animatable value.
     pub fn new(value: T) -> Self {
-        Self {
-            #[cfg(feature = "animation")]
-            value: AnimatedValue::new_static(value),
-            #[cfg(not(feature = "animation"))]
-            value,
-        }
+        Self(value)
     }
 
     /// Gets the static value.
     pub fn get(&self) -> &T {
-        #[cfg(feature = "animation")]
-        { self.value.as_static() }
-        #[cfg(not(feature = "animation"))]
-        { &self.value }
+        &self.0
     }
 
     /// Gets an owned copy of the static value.
-    pub fn resolve(&self) -> T where T: Clone + Default {
-        #[cfg(feature = "animation")]
-        { self.value.resolve() }
-        #[cfg(not(feature = "animation"))]
-        { self.value.clone() }
+    pub fn resolve(&self) -> T where T: Clone {
+        self.0.clone()
     }
 
-    /// Sets the value (only available when animation is disabled).
-    #[cfg(not(feature = "animation"))]
+    /// Sets the value.
     pub fn set(&mut self, value: T) {
-        self.value = value;
+        self.0 = value;
     }
 
     /// Gets the animation data if available.
-    #[cfg(feature = "animation")]
-    pub fn animated(&self) -> &AnimatedValue<T> {
-        &self.value
-    }
-
-    /// Gets the animation data if available.
-    #[cfg(not(feature = "animation"))]
+    /// When animation feature is disabled, this always returns Some(&T).
     pub fn animated(&self) -> Option<&T> {
-        Some(&self.value)
+        Some(&self.0)
     }
 }
 

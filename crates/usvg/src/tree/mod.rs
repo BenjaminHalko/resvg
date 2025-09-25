@@ -22,8 +22,6 @@ pub use self::animation::*;
 
 use crate::OptionLog;
 
-#[cfg(feature = "animation")]
-use crate::tree::animation::Animatable;
 
 /// An alias to `NormalizedF32`.
 pub type Opacity = NormalizedF32;
@@ -418,11 +416,6 @@ impl Stop {
         self.opacity.resolve()
     }
 
-    /// Gradient stop opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
-        &self.opacity
-    }
 }
 
 /// A pattern element.
@@ -584,11 +577,6 @@ impl Stroke {
         self.dashoffset.resolve()
     }
 
-    /// Stroke dash offset (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_dashoffset(&self) -> &AnimatedValue<f32> {
-        self.dashoffset.animated()
-    }
 
     /// Stroke miter limit.
     pub fn miterlimit(&self) -> StrokeMiterlimit {
@@ -600,22 +588,12 @@ impl Stroke {
         self.opacity.resolve()
     }
 
-    /// Stroke opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
-        self.opacity.animated()
-    }
 
     /// Stroke width.
     pub fn width(&self) -> StrokeWidth {
         self.width.resolve()
     }
 
-    /// Stroke width (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_width(&self) -> &AnimatedValue<StrokeWidth> {
-        self.width.animated()
-    }
 
     /// Stroke linecap.
     pub fn linecap(&self) -> LineCap {
@@ -708,11 +686,6 @@ impl Fill {
         self.opacity.resolve()
     }
 
-    /// Fill opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
-        self.opacity.animated()
-    }
 
     /// Fill rule.
     pub fn rule(&self) -> FillRule {
@@ -1110,11 +1083,6 @@ impl Group {
         self.opacity.resolve()
     }
 
-    /// Group opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> &AnimatedValue<Opacity> {
-        &self.opacity
-    }
 
     /// Group blend mode.
     ///

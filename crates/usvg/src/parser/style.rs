@@ -9,8 +9,6 @@ use crate::{
     ApproxEqUlps, Color, Fill, FillRule, LineCap, LineJoin, Opacity, Paint, Stroke,
     StrokeMiterlimit, Units,
 };
-#[cfg(feature = "animation")]
-use crate::tree::animation::AnimatedValue;
 
 impl<'a, 'input: 'a> FromValue<'a, 'input> for LineCap {
     fn parse(_: SvgNode, _: AId, value: &str) -> Option<Self> {
@@ -78,23 +76,10 @@ pub(crate) fn resolve_fill(
             (Paint::Color(Color::black()), None)
         };
 
-    #[cfg(feature = "animation")]
-    let fill_opacity = super::animation::parse_animated_value(
-        node,
-        AId::FillOpacity,
-        |s| s.parse().ok().map(Opacity::from),
-        Opacity::ONE,
-    );
-
-    #[cfg(not(feature = "animation"))]
     let fill_opacity = node
         .find_attribute::<Opacity>(AId::FillOpacity)
         .unwrap_or(Opacity::ONE);
 
-    #[cfg(feature = "animation")]
-    let fill_opacity = AnimatedValue::new_static(sub_opacity * fill_opacity);
-
-    #[cfg(not(feature = "animation"))]
     let fill_opacity = sub_opacity * fill_opacity;
 
     Some(Fill {
