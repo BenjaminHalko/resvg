@@ -140,6 +140,19 @@ impl<T> AnimatedValue<T> {
         }
     }
 
+    /// Resolves the animated value to a concrete value.
+    /// For static values, returns the value directly.
+    /// For animated values, returns the first keyframe value or default.
+    #[cfg(feature = "animation")]
+    pub fn resolve(&self) -> T where T: Clone + Default {
+        match self {
+            AnimatedValue::Static(ref value) => value.clone(),
+            AnimatedValue::Animated(ref keyframes) => {
+                keyframes.first().map(|keyframe| keyframe.value.clone()).unwrap_or_default()
+            }
+        }
+    }
+
     /// Gets the keyframes if this is an animated value.
     #[cfg(feature = "animation")]
     pub fn as_animated(&self) -> Option<&[Keyframe<T>]> {
