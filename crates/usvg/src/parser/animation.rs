@@ -206,11 +206,17 @@ pub mod animation_parser {
             .push(animation_data);
     }
 
+    /// Check if an element has any animations
+    pub(crate) fn has_element_animations(element_id: &str) -> bool {
+        let registry = ANIMATION_REGISTRY.lock().unwrap();
+        registry.as_ref().map_or(false, |r| r.contains_key(element_id))
+    }
+
     /// Retrieve animation data for a specific element and property
     pub(crate) fn get_animation_data(element_id: &str, property: &str) -> Option<Vec<AnimationData>> {
         let registry = ANIMATION_REGISTRY.lock().unwrap();
-        match *registry {
-            Some(ref registry) => registry.get(element_id)?.get(property).cloned(),
+        match registry.as_ref() {
+            Some(registry) => registry.get(element_id)?.get(property).cloned(),
             None => None,
         }
     }
@@ -234,5 +240,6 @@ pub mod animation_parser {
         println!("- Property: opacity");
         println!("- Keyframes: 1.0 → 0.5 → 0.0");
         println!("- Duration: 2 seconds");
+        println!("Use AnimationSupport::has_animations(element_id) to check if element has animations");
     }
 }

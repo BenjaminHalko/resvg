@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #[cfg(feature = "animation")]
-mod animation;
+pub mod animation;
 mod clippath;
 mod converter;
 mod filter;

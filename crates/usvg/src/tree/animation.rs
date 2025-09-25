@@ -1,7 +1,6 @@
 // Copyright 2025 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::ApproxEqUlps;
 use std::time::Duration;
 
 /// Represents an animated value that can be either a single static value or a sequence of keyframes.
@@ -17,21 +16,21 @@ pub enum AnimatedValue<T> {
 /// A minimal animation system that doesn't break existing APIs
 /// Key insight: Keep core usvg structures unchanged, add animation as a separate layer
 
-/// Simple animation data structure
+/// Internal animation data structure - not exposed to public API
 #[derive(Clone, Debug)]
 #[cfg(feature = "animation")]
-pub struct AnimationData {
+pub(crate) struct AnimationData {
     /// Element ID this animation applies to
-    pub element_id: String,
-    /// Property being animated
-    pub property: String,
+    pub(crate) element_id: String,
+    /// Property being animated (internal use only)
+    pub(crate) property: String,
     /// Animation keyframes
-    pub keyframes: Vec<Keyframe<String>>, // Simplified for demo
+    pub(crate) keyframes: Vec<Keyframe<String>>, // Simplified for demo
 }
 
 #[cfg(feature = "animation")]
 impl AnimationData {
-    pub fn new(element_id: String, property: String, keyframes: Vec<Keyframe<String>>) -> Self {
+    pub(crate) fn new(element_id: String, property: String, keyframes: Vec<Keyframe<String>>) -> Self {
         Self {
             element_id,
             property,
@@ -51,24 +50,29 @@ impl AnimationSupport {
         cfg!(feature = "animation")
     }
 
-    /// Create a simple demo - this shows the API works
+    /// Check if an element has any animations
+    /// Returns true if animation feature is enabled and element has animations
     #[cfg(feature = "animation")]
-    pub fn demo_animation_api() {
-        println!("Animation API is available!");
-        let data = AnimationData::new(
-            "rect1".to_string(),
-            "opacity".to_string(),
-            vec![
-                Keyframe::new(0.0, "1.0".to_string()),
-                Keyframe::new(1.0, "0.0".to_string()),
-            ]
-        );
-        println!("Created animation data: {:?}", data);
+    pub fn has_animations(element_id: &str) -> bool {
+        crate::parser::animation::animation_parser::has_element_animations(element_id)
     }
 
     #[cfg(not(feature = "animation"))]
-    pub fn demo_animation_api() {
-        println!("Animation feature is disabled - no animation types available");
+    pub fn has_animations(_element_id: &str) -> bool {
+        false
+    }
+
+    /// Demo function showing the animation API is available
+    #[cfg(feature = "animation")]
+    pub fn demo() {
+        println!("Animation API is available!");
+        println!("Use has_animations(element_id) to check if an element has animations");
+        println!("Internal parser extracts animation data from SVG elements");
+    }
+
+    #[cfg(not(feature = "animation"))]
+    pub fn demo() {
+        println!("Animation feature is disabled - no animation support available");
     }
 }
 
