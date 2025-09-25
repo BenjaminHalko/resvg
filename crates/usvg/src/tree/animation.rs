@@ -62,37 +62,13 @@ impl AnimationSupport {
         cfg!(feature = "animation")
     }
 
-    /// Check if an element has any animations
-    /// Returns true if animation feature is enabled and element has animations
-    #[cfg(feature = "animation")]
-    pub fn has_animations(element_id: &str) -> bool {
-        crate::parser::animation::animation_parser::has_element_animations(element_id)
-    }
-
-    #[cfg(not(feature = "animation"))]
-    pub fn has_animations(_element_id: &str) -> bool {
-        false
-    }
-
-    /// Get animation data for a specific element and property
-    /// Returns the parsed animation values as proper usvg types
-    #[cfg(feature = "animation")]
-    pub fn get_animation_data<T>(element_id: &str, property: &str) -> Option<Vec<crate::tree::animation::AnimationData>> {
-        crate::parser::animation::animation_parser::get_animation_data(element_id, property)
-    }
-
-    #[cfg(not(feature = "animation"))]
-    pub fn get_animation_data<T>(_element_id: &str, _property: &str) -> Option<Vec<crate::tree::animation::AnimationData>> {
-        None
-    }
-
     /// Demo function showing the animation API is available
     #[cfg(feature = "animation")]
     pub fn demo() {
         println!("Animation API is available!");
-        println!("Use has_animations(element_id) to check if an element has animations");
-        println!("Use get_animation_data(element_id, property) to get parsed animation values");
-        println!("Internal parser extracts animation data from SVG elements");
+        println!("Use object.animated_property() methods to access animations");
+        println!("Example: path.stroke().unwrap().animated_width()");
+        println!("Example: group.animated_transform()");
     }
 
     #[cfg(not(feature = "animation"))]

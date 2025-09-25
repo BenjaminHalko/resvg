@@ -592,6 +592,19 @@ impl Stroke {
         self.width
     }
 
+    /// Stroke width animation data, if any.
+    #[cfg(feature = "animation")]
+    pub fn animated_width(&self) -> Option<&crate::tree::animation::AnimationData> {
+        // For now, return None - in a full implementation, this would look up
+        // animation data for this element's stroke-width property
+        None
+    }
+
+    #[cfg(not(feature = "animation"))]
+    pub fn animated_width(&self) -> Option<&()> {
+        None
+    }
+
 
     /// Stroke linecap.
     pub fn linecap(&self) -> LineCap {
@@ -682,6 +695,17 @@ impl Fill {
     /// Fill opacity.
     pub fn opacity(&self) -> Opacity {
         self.opacity
+    }
+
+    /// Fill opacity animation data, if any.
+    #[cfg(feature = "animation")]
+    pub fn animated_opacity(&self) -> Option<&crate::tree::animation::AnimationData> {
+        None
+    }
+
+    #[cfg(not(feature = "animation"))]
+    pub fn animated_opacity(&self) -> Option<&()> {
+        None
     }
 
 
@@ -1088,6 +1112,17 @@ impl Group {
         self.transform
     }
 
+    /// Element's transform animation data, if any.
+    #[cfg(feature = "animation")]
+    pub fn animated_transform(&self) -> Option<&crate::tree::animation::AnimationData> {
+        None
+    }
+
+    #[cfg(not(feature = "animation"))]
+    pub fn animated_transform(&self) -> Option<&()> {
+        None
+    }
+
     /// Element's absolute transform.
     ///
     /// Contains all ancestors transforms including group's transform.
@@ -1104,6 +1139,17 @@ impl Group {
     /// it with a parent group using the specified opacity.
     pub fn opacity(&self) -> Opacity {
         self.opacity
+    }
+
+    /// Group opacity animation data, if any.
+    #[cfg(feature = "animation")]
+    pub fn animated_opacity(&self) -> Option<&crate::tree::animation::AnimationData> {
+        None
+    }
+
+    #[cfg(not(feature = "animation"))]
+    pub fn animated_opacity(&self) -> Option<&()> {
+        None
     }
 
 
