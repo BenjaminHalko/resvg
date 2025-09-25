@@ -14,45 +14,48 @@ pub enum AnimatedValue<T> {
     Animated(Vec<Keyframe<T>>),
 }
 
-/// A generic wrapper that makes any value potentially animatable.
+/// A targeted approach: only commonly animated properties are animatable.
+/// This reduces complexity while providing animation support for the most important cases.
 #[derive(Clone, Debug)]
 pub struct Animatable<T> {
-    /// The base value (static or first keyframe).
-    value: T,
-    /// Animation data when available.
     #[cfg(feature = "animation")]
-    animation: Option<AnimatedValue<T>>,
+    value: AnimatedValue<T>,
+    #[cfg(not(feature = "animation"))]
+    value: T,
 }
 
 impl<T> Animatable<T> {
     /// Creates a new static animatable value.
     pub fn new(value: T) -> Self {
         Self {
-            value,
             #[cfg(feature = "animation")]
-            animation: None,
+            value: AnimatedValue::new_static(value),
+            #[cfg(not(feature = "animation"))]
+            value,
         }
     }
 
-    /// Gets the base value (static value or first keyframe).
+    /// Gets the base value without cloning.
+    /// Most efficient for internal use.
     pub fn get(&self) -> &T {
-        &self.value
+        #[cfg(feature = "animation")]
+        { self.value.as_static() }
+        #[cfg(not(feature = "animation"))]
+        { &self.value }
     }
 
-    /// Gets an owned copy of the base value.
+    /// Gets an owned copy - only clone when needed.
     pub fn resolve(&self) -> T where T: Clone {
-        self.value.clone()
-    }
-
-    /// Sets the base value.
-    pub fn set(&mut self, value: T) {
-        self.value = value;
+        #[cfg(feature = "animation")]
+        { self.value.resolve() }
+        #[cfg(not(feature = "animation"))]
+        { self.value.clone() }
     }
 
     /// Gets the animation data if available.
     #[cfg(feature = "animation")]
     pub fn animated(&self) -> Option<&AnimatedValue<T>> {
-        self.animation.as_ref()
+        Some(&self.value)
     }
 
     /// Gets the animation data if available.
@@ -61,31 +64,37 @@ impl<T> Animatable<T> {
         Some(&self.value)
     }
 
-    /// Sets the animation data.
-    #[cfg(feature = "animation")]
-    pub fn set_animation(&mut self, animation: AnimatedValue<T>) {
-        self.animation = Some(animation);
-    }
-
-    /// Gets the keyframes if this value is animated.
-    #[cfg(feature = "animation")]
-    pub fn keyframes(&self) -> Option<&[Keyframe<T>]> {
-        self.animation.as_ref().map(|a| match a {
-            AnimatedValue::Static(_) => &[],
-            AnimatedValue::Animated(ref keyframes) => keyframes,
-        })
-    }
-
     /// Checks if this value has animation data.
     #[cfg(feature = "animation")]
     pub fn is_animated(&self) -> bool {
-        self.animation.is_some()
+        self.value.is_animated()
     }
 
     /// Checks if this value has animation data.
     #[cfg(not(feature = "animation"))]
     pub fn is_animated(&self) -> bool {
         false
+    }
+}
+
+/// Helper for internal functions: provides efficient access patterns
+/// This reduces the need to update every internal function.
+pub struct AnimatableHelper;
+
+impl AnimatableHelper {
+    /// Get value by reference (zero-cost when animation disabled)
+    pub fn get<T>(animatable: &Animatable<T>) -> &T {
+        animatable.get()
+    }
+
+    /// Get owned value (only clone when needed)
+    pub fn resolve<T: Clone>(animatable: &Animatable<T>) -> T {
+        animatable.resolve()
+    }
+
+    /// Check if animated (zero-cost when animation disabled)
+    pub fn is_animated<T>(animatable: &Animatable<T>) -> bool {
+        animatable.is_animated()
     }
 }
 

@@ -389,9 +389,9 @@ pub type StopOffset = NormalizedF32;
 /// `stop` element in SVG.
 #[derive(Clone, Copy, Debug)]
 pub struct Stop {
-    pub(crate) offset: Animatable<StopOffset>,
-    pub(crate) color: Animatable<Color>,
-    pub(crate) opacity: Animatable<Opacity>,
+    pub(crate) offset: StopOffset,
+    pub(crate) color: Color,
+    pub(crate) opacity: Opacity,
 }
 
 impl Stop {
@@ -399,39 +399,21 @@ impl Stop {
     ///
     /// `offset` in SVG.
     pub fn offset(&self) -> StopOffset {
-        self.offset.resolve()
-    }
-
-    /// Gradient stop offset (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_offset(&self) -> Option<&crate::tree::animation::AnimatedValue<StopOffset>> {
-        self.offset.animated()
+        self.offset
     }
 
     /// Gradient stop color.
     ///
     /// `stop-color` in SVG.
     pub fn color(&self) -> Color {
-        self.color.resolve()
-    }
-
-    /// Gradient stop color (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_color(&self) -> Option<&crate::tree::animation::AnimatedValue<Color>> {
-        self.color.animated()
+        self.color
     }
 
     /// Gradient stop opacity.
     ///
     /// `stop-opacity` in SVG.
     pub fn opacity(&self) -> Opacity {
-        self.opacity.resolve()
-    }
-
-    /// Gradient stop opacity (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_opacity(&self) -> Option<&crate::tree::animation::AnimatedValue<Opacity>> {
-        self.opacity.animated()
+        self.opacity
     }
 
 }
@@ -1024,9 +1006,9 @@ impl Node {
 #[derive(Clone, Debug)]
 pub struct Group {
     pub(crate) id: String,
-    pub(crate) transform: Animatable<Transform>,
-    pub(crate) abs_transform: Animatable<Transform>,
-    pub(crate) opacity: Animatable<Opacity>,
+    pub(crate) transform: Transform,
+    pub(crate) abs_transform: Transform,
+    pub(crate) opacity: Opacity,
     pub(crate) blend_mode: BlendMode,
     pub(crate) isolate: bool,
     pub(crate) clip_path: Option<Arc<ClipPath>>,
@@ -1080,13 +1062,7 @@ impl Group {
     ///
     /// This is a relative transform. The one that is set via the `transform` attribute in SVG.
     pub fn transform(&self) -> Transform {
-        self.transform.resolve()
-    }
-
-    /// Element's transform (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_transform(&self) -> Option<&crate::tree::animation::AnimatedValue<Transform>> {
-        self.transform.animated()
+        self.transform
     }
 
     /// Element's absolute transform.
@@ -1096,13 +1072,7 @@ impl Group {
     /// Note that subroots, like clipPaths, masks and patterns, have their own root transform,
     /// which isn't affected by the node that references this subroot.
     pub fn abs_transform(&self) -> Transform {
-        self.abs_transform.resolve()
-    }
-
-    /// Element's absolute transform (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_abs_transform(&self) -> Option<&crate::tree::animation::AnimatedValue<Transform>> {
-        self.abs_transform.animated()
+        self.abs_transform
     }
 
     /// Group opacity.
@@ -1110,7 +1080,7 @@ impl Group {
     /// After the group is rendered we should combine
     /// it with a parent group using the specified opacity.
     pub fn opacity(&self) -> Opacity {
-        self.opacity.resolve()
+        self.opacity
     }
 
 
@@ -1284,17 +1254,13 @@ impl Default for PaintOrder {
 #[derive(Clone, Debug)]
 pub struct Path {
     pub(crate) id: String,
-    pub(crate) visible: Animatable<bool>,
+    pub(crate) visible: bool,
     pub(crate) fill: Option<Fill>,
     pub(crate) stroke: Option<Stroke>,
     pub(crate) paint_order: PaintOrder,
     pub(crate) rendering_mode: ShapeRendering,
     pub(crate) data: Arc<tiny_skia_path::Path>,
-    pub(crate) abs_transform: Animatable<Transform>,
-    pub(crate) x: Animatable<f32>,
-    pub(crate) y: Animatable<f32>,
-    pub(crate) width: Animatable<f32>,
-    pub(crate) height: Animatable<f32>,
+    pub(crate) abs_transform: Transform,
     pub(crate) bounding_box: Rect,
     pub(crate) abs_bounding_box: Rect,
     pub(crate) stroke_bounding_box: Rect,
@@ -1416,51 +1382,7 @@ impl Path {
     /// Note that this is not the relative transform present in SVG.
     /// The SVG one would be set only on groups.
     pub fn abs_transform(&self) -> Transform {
-        self.abs_transform.resolve()
-    }
-
-    /// Element's x position.
-    pub fn x(&self) -> f32 {
-        self.x.resolve()
-    }
-
-    /// Element's x position (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_x(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.x.animated()
-    }
-
-    /// Element's y position.
-    pub fn y(&self) -> f32 {
-        self.y.resolve()
-    }
-
-    /// Element's y position (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_y(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.y.animated()
-    }
-
-    /// Element's width.
-    pub fn width(&self) -> f32 {
-        self.width.resolve()
-    }
-
-    /// Element's width (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_width(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.width.animated()
-    }
-
-    /// Element's height.
-    pub fn height(&self) -> f32 {
-        self.height.resolve()
-    }
-
-    /// Element's height (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_height(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.height.animated()
+        self.abs_transform
     }
 
     /// Element's object bounding box.
@@ -1564,15 +1486,11 @@ impl std::fmt::Debug for ImageKind {
 #[derive(Clone, Debug)]
 pub struct Image {
     pub(crate) id: String,
-    pub(crate) visible: Animatable<bool>,
+    pub(crate) visible: bool,
     pub(crate) size: Size,
     pub(crate) rendering_mode: ImageRendering,
     pub(crate) kind: ImageKind,
-    pub(crate) abs_transform: Animatable<Transform>,
-    pub(crate) x: Animatable<f32>,
-    pub(crate) y: Animatable<f32>,
-    pub(crate) width: Animatable<f32>,
-    pub(crate) height: Animatable<f32>,
+    pub(crate) abs_transform: Transform,
     pub(crate) abs_bounding_box: NonZeroRect,
 }
 
@@ -1588,13 +1506,7 @@ impl Image {
 
     /// Element visibility.
     pub fn is_visible(&self) -> bool {
-        self.visible.resolve()
-    }
-
-    /// Element visibility (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_visible(&self) -> Option<&crate::tree::animation::AnimatedValue<bool>> {
-        self.visible.animated()
+        self.visible
     }
 
     /// The actual image size.
@@ -1605,49 +1517,6 @@ impl Image {
         self.size
     }
 
-    /// Element's x position.
-    pub fn x(&self) -> f32 {
-        self.x.resolve()
-    }
-
-    /// Element's x position (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_x(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.x.animated()
-    }
-
-    /// Element's y position.
-    pub fn y(&self) -> f32 {
-        self.y.resolve()
-    }
-
-    /// Element's y position (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_y(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.y.animated()
-    }
-
-    /// Element's width.
-    pub fn width(&self) -> f32 {
-        self.width.resolve()
-    }
-
-    /// Element's width (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_width(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.width.animated()
-    }
-
-    /// Element's height.
-    pub fn height(&self) -> f32 {
-        self.height.resolve()
-    }
-
-    /// Element's height (potentially animated).
-    #[cfg(feature = "animation")]
-    pub fn animated_height(&self) -> Option<&crate::tree::animation::AnimatedValue<f32>> {
-        self.height.animated()
-    }
 
     /// Rendering mode.
     ///
@@ -1668,7 +1537,7 @@ impl Image {
     /// Note that this is not the relative transform present in SVG.
     /// The SVG one would be set only on groups.
     pub fn abs_transform(&self) -> Transform {
-        self.abs_transform.resolve()
+        self.abs_transform
     }
 
     /// Element's object bounding box.
