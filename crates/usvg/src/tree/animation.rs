@@ -127,14 +127,15 @@ impl<T> AnimatedValue<T> {
         matches!(self, AnimatedValue::Animated(_))
     }
 
-    /// Gets the static value if this is a static value.
+    /// Gets the static value.
     /// If the value is animated, returns the value from the first keyframe.
+    /// If there are no keyframes, returns the default value for T.
     #[cfg(feature = "animation")]
-    pub fn as_static(&self) -> Option<&T> {
+    pub fn as_static(&self) -> &T {
         match self {
-            AnimatedValue::Static(ref value) => Some(value),
+            AnimatedValue::Static(ref value) => value,
             AnimatedValue::Animated(ref keyframes) => {
-                keyframes.first().map(|keyframe| &keyframe.value)
+                keyframes.first().map(|keyframe| &keyframe.value).unwrap_or(&T::default())
             }
         }
     }
@@ -164,8 +165,8 @@ impl<T> AnimatedValue<T> {
         false
     }
 
-    pub fn as_static(&self) -> Option<&T> {
-        Some(self)
+    pub fn as_static(&self) -> &T {
+        self
     }
 
     pub fn as_animated(&self) -> Option<&[Keyframe<T>]> {

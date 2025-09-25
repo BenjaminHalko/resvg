@@ -578,7 +578,7 @@ impl Stroke {
 
     /// Stroke dash offset.
     pub fn dashoffset(&self) -> f32 {
-        self.dashoffset.as_static().unwrap_or(&0.0).copied()
+        self.dashoffset.as_static().copied()
     }
 
     /// Stroke dash offset (potentially animated).
@@ -594,7 +594,7 @@ impl Stroke {
 
     /// Stroke opacity.
     pub fn opacity(&self) -> Opacity {
-        self.opacity.as_static().unwrap_or(&Opacity::ONE).copied()
+        self.opacity.as_static().copied()
     }
 
     /// Stroke opacity (potentially animated).
@@ -605,7 +605,7 @@ impl Stroke {
 
     /// Stroke width.
     pub fn width(&self) -> StrokeWidth {
-        self.width.as_static().unwrap_or(&StrokeWidth::new(1.0).unwrap()).get()
+        self.width.as_static().get()
     }
 
     /// Stroke width (potentially animated).
@@ -702,7 +702,7 @@ impl Fill {
 
     /// Fill opacity.
     pub fn opacity(&self) -> Opacity {
-        self.opacity.as_static().unwrap_or(&Opacity::ONE).copied()
+        self.opacity.as_static().copied()
     }
 
     /// Fill opacity (potentially animated).
