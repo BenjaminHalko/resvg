@@ -80,13 +80,32 @@ struct Contribution<'a> {
 /// Samples every animation on `node_anim` at time `t` and folds them into the
 /// per-attribute sandwich.
 pub(crate) fn sample_overrides(node_anim: &NodeAnimation, t: f32) -> SampledOverrides {
-    let mut contributions: Vec<Contribution> = node_anim
+    let mut overrides = SampledOverrides::default();
+    if node_anim.base_hidden() {
+        overrides.hidden = Some(true);
+    }
+    let mut image = ImageState::new(node_anim);
+
+    let mut contribution_iter = node_anim
         .animations()
         .iter()
         .enumerate()
         .filter(|(_, animation)| !animation.suppressed_by_important())
-        .filter_map(|(order, animation)| build_contribution(animation, order, t))
-        .collect();
+        .filter_map(|(order, animation)| build_contribution(animation, order, t));
+
+    let Some(first) = contribution_iter.next() else {
+        overrides.image_geometry = image.finish();
+        return overrides;
+    };
+
+    let Some(second) = contribution_iter.next() else {
+        fold(&mut overrides, &mut image, &first);
+        overrides.image_geometry = image.finish();
+        return overrides;
+    };
+
+    let mut contributions = vec![first, second];
+    contributions.extend(contribution_iter);
 
     // SMIL sorts by interval begin (later wins) then document order; CSS sorts
     // after all SMIL contributions, in document order.
@@ -97,11 +116,6 @@ pub(crate) fn sample_overrides(node_anim: &NodeAnimation, t: f32) -> SampledOver
             .then(a.order.cmp(&b.order))
     });
 
-    let mut overrides = SampledOverrides::default();
-    if node_anim.base_hidden() {
-        overrides.hidden = Some(true);
-    }
-    let mut image = ImageState::new(node_anim);
     for contribution in &contributions {
         fold(&mut overrides, &mut image, contribution);
     }
