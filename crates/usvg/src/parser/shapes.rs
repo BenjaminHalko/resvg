@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use svgtypes::Length;
-use tiny_skia_path::Path;
+use tiny_skia_path::{Path, Point};
 
 use super::svgtree::{AId, EId, SvgNode};
 use super::{converter, units};
@@ -85,7 +85,17 @@ fn convert_rect(node: SvgNode, state: &converter::State) -> Option<Arc<Path>> {
     let x = node.convert_user_length(AId::X, state, Length::zero());
     let y = node.convert_user_length(AId::Y, state, Length::zero());
 
-    let (mut rx, mut ry) = resolve_rx_ry(node, state);
+    let (rx, ry) = resolve_rx_ry(node, state);
+
+    rect_path(x, y, width, height, rx, ry).map(Arc::new)
+}
+
+/// Builds a `rect` path from resolved parameters.
+///
+/// `rx`/`ry` are clamped to half of the width/height before use.
+pub(crate) fn rect_path(x: f32, y: f32, width: f32, height: f32, rx: f32, ry: f32) -> Option<Path> {
+    let mut rx = rx;
+    let mut ry = ry;
 
     // Clamp rx/ry to the half of the width/height.
     //
@@ -121,7 +131,7 @@ fn convert_rect(node: SvgNode, state: &converter::State) -> Option<Arc<Path>> {
         builder.finish()?
     };
 
-    Some(Arc::new(path))
+    Some(path)
 }
 
 fn resolve_rx_ry(node: SvgNode, state: &converter::State) -> (f32, f32) {
@@ -165,35 +175,35 @@ fn convert_line(node: SvgNode, state: &converter::State) -> Option<Arc<Path>> {
     let x2 = node.convert_user_length(AId::X2, state, Length::zero());
     let y2 = node.convert_user_length(AId::Y2, state, Length::zero());
 
+    line_path(x1, y1, x2, y2).map(Arc::new)
+}
+
+/// Builds a `line` path from resolved endpoints.
+pub(crate) fn line_path(x1: f32, y1: f32, x2: f32, y2: f32) -> Option<Path> {
     let mut builder = tiny_skia_path::PathBuilder::new();
     builder.move_to(x1, y1);
     builder.line_to(x2, y2);
-    builder.finish().map(Arc::new)
+    builder.finish()
 }
 
 fn convert_polyline(node: SvgNode) -> Option<Arc<Path>> {
-    let builder = points_to_path(node, "Polyline")?;
-    builder.finish().map(Arc::new)
+    let points = parse_points(node, "Polyline")?;
+    polyline_path(&points, false).map(Arc::new)
 }
 
 fn convert_polygon(node: SvgNode) -> Option<Arc<Path>> {
-    let mut builder = points_to_path(node, "Polygon")?;
-    builder.close();
-    builder.finish().map(Arc::new)
+    let points = parse_points(node, "Polygon")?;
+    polyline_path(&points, true).map(Arc::new)
 }
 
-fn points_to_path(node: SvgNode, eid: &str) -> Option<tiny_skia_path::PathBuilder> {
+fn parse_points(node: SvgNode, eid: &str) -> Option<Vec<Point>> {
     use svgtypes::PointsParser;
 
-    let mut builder = tiny_skia_path::PathBuilder::new();
+    let mut points = Vec::new();
     match node.attribute::<&str>(AId::Points) {
         Some(text) => {
             for (x, y) in PointsParser::from(text) {
-                if builder.is_empty() {
-                    builder.move_to(x as f32, y as f32);
-                } else {
-                    builder.line_to(x as f32, y as f32);
-                }
+                points.push(Point::from_xy(x as f32, y as f32));
             }
         }
         _ => {
@@ -207,7 +217,7 @@ fn points_to_path(node: SvgNode, eid: &str) -> Option<tiny_skia_path::PathBuilde
     };
 
     // 'polyline' and 'polygon' elements must contain at least 2 points.
-    if builder.len() < 2 {
+    if points.len() < 2 {
         log::warn!(
             "{} '{}' has less than 2 points. Skipped.",
             eid,
@@ -216,7 +226,25 @@ fn points_to_path(node: SvgNode, eid: &str) -> Option<tiny_skia_path::PathBuilde
         return None;
     }
 
-    Some(builder)
+    Some(points)
+}
+
+/// Builds a `polyline` (open) or `polygon` (`closed`) path from an ordered point list.
+pub(crate) fn polyline_path(points: &[Point], closed: bool) -> Option<Path> {
+    let mut builder = tiny_skia_path::PathBuilder::new();
+    for point in points {
+        if builder.is_empty() {
+            builder.move_to(point.x, point.y);
+        } else {
+            builder.line_to(point.x, point.y);
+        }
+    }
+
+    if closed {
+        builder.close();
+    }
+
+    builder.finish()
 }
 
 fn convert_circle(node: SvgNode, state: &converter::State) -> Option<Arc<Path>> {
@@ -232,7 +260,12 @@ fn convert_circle(node: SvgNode, state: &converter::State) -> Option<Arc<Path>> 
         return None;
     }
 
-    ellipse_to_path(cx, cy, r, r)
+    circle_path(cx, cy, r).map(Arc::new)
+}
+
+/// Builds a `circle` path from a center and radius.
+pub(crate) fn circle_path(cx: f32, cy: f32, r: f32) -> Option<Path> {
+    ellipse_path(cx, cy, r, r)
 }
 
 fn convert_ellipse(node: SvgNode, state: &converter::State) -> Option<Arc<Path>> {
@@ -256,10 +289,11 @@ fn convert_ellipse(node: SvgNode, state: &converter::State) -> Option<Arc<Path>>
         return None;
     }
 
-    ellipse_to_path(cx, cy, rx, ry)
+    ellipse_path(cx, cy, rx, ry).map(Arc::new)
 }
 
-fn ellipse_to_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<Arc<Path>> {
+/// Builds an `ellipse` path from a center and radii.
+pub(crate) fn ellipse_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<Path> {
     let mut builder = tiny_skia_path::PathBuilder::new();
     builder.move_to(cx + rx, cy);
     builder.arc_to(rx, ry, 0.0, false, true, cx, cy + ry);
@@ -267,7 +301,7 @@ fn ellipse_to_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<Arc<Path>> {
     builder.arc_to(rx, ry, 0.0, false, true, cx, cy - ry);
     builder.arc_to(rx, ry, 0.0, false, true, cx + rx, cy);
     builder.close();
-    builder.finish().map(Arc::new)
+    builder.finish()
 }
 
 trait PathBuilderExt {
