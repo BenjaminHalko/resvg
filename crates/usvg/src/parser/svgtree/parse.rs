@@ -70,6 +70,8 @@ fn parse<'input>(
         nodes: Vec::new(),
         attrs: Vec::new(),
         links: HashMap::new(),
+        #[cfg(feature = "animation")]
+        keyframes: Vec::new(),
     };
 
     // build a map of id -> node for resolve_href
@@ -90,7 +92,26 @@ fn parse<'input>(
         kind: NodeKind::Root,
     });
 
+    #[cfg(not(feature = "animation"))]
     let style_sheet = resolve_css(xml, injected_stylesheet);
+
+    // `@keyframes` at-rules are pulled out before the remaining CSS reaches
+    // `simplecss`, which only understands selector-based rules.
+    #[cfg(feature = "animation")]
+    let css_text = collect_style_text(xml, injected_stylesheet);
+    #[cfg(feature = "animation")]
+    let (keyframes, remaining_css) =
+        crate::parser::animation::css::extract_keyframes(&css_text);
+    #[cfg(feature = "animation")]
+    {
+        doc.keyframes = keyframes;
+    }
+    #[cfg(feature = "animation")]
+    let style_sheet = {
+        let mut sheet = simplecss::StyleSheet::new();
+        sheet.parse_more(&remaining_css);
+        sheet
+    };
 
     parse_xml_node_children(
         xml.root(),
@@ -638,6 +659,7 @@ fn parse_svg_use_element<'input>(
     )
 }
 
+#[cfg(not(feature = "animation"))]
 fn resolve_css<'a>(
     xml: &'a roxmltree::Document<'a>,
     style_sheet: Option<&'a str>,
@@ -666,6 +688,36 @@ fn resolve_css<'a>(
     }
 
     sheet
+}
+
+/// Concatenates the injected style sheet and every internal `<style>` element,
+/// mirroring [`resolve_css`]'s collection order so keyframes can be extracted
+/// before the text reaches `simplecss`.
+#[cfg(feature = "animation")]
+fn collect_style_text(xml: &roxmltree::Document<'_>, injected: Option<&str>) -> String {
+    let mut css = String::new();
+
+    // Injected style sheets do not override internal ones (we mimic the logic of
+    // rsvg-convert), so we collect them first.
+    if let Some(injected) = injected {
+        css.push_str(injected);
+        css.push('\n');
+    }
+
+    for node in xml.descendants().filter(|n| n.has_tag_name("style")) {
+        match node.attribute("type") {
+            Some("text/css") => {}
+            Some(_) => continue,
+            None => {}
+        }
+
+        if let Some(text) = node.text() {
+            css.push_str(text);
+            css.push('\n');
+        }
+    }
+
+    css
 }
 
 struct XmlNode<'a, 'input: 'a>(roxmltree::Node<'a, 'input>);

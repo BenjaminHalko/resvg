@@ -25,6 +25,8 @@ pub struct Document<'input> {
     nodes: Vec<NodeData>,
     attrs: Vec<Attribute<'input>>,
     links: HashMap<String, NodeId>,
+    #[cfg(feature = "animation")]
+    keyframes: Vec<crate::parser::animation::css::KeyframesRule>,
 }
 
 impl<'input> Document<'input> {

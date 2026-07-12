@@ -3,6 +3,7 @@
 
 //! Parsing of SMIL and CSS animation elements.
 
+pub(crate) mod css;
 pub(crate) mod geom;
 pub(crate) mod motion;
 pub(crate) mod timing;
