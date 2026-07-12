@@ -53,10 +53,6 @@ pub(crate) enum BaseValue {
     FillRule(FillRule),
     /// A `visibility` base.
     Visibility(AnimationVisibility),
-    /// A stop `offset` base.
-    StopOffset(NormalizedF32),
-    /// A `viewBox` base.
-    Rect(NonZeroRect),
 }
 
 impl BaseValue {
@@ -126,20 +122,6 @@ impl BaseValue {
     fn visibility(&self) -> Option<AnimationVisibility> {
         match self {
             BaseValue::Visibility(v) => Some(*v),
-            _ => None,
-        }
-    }
-
-    fn stop_offset(&self) -> Option<NormalizedF32> {
-        match self {
-            BaseValue::StopOffset(v) => Some(*v),
-            _ => None,
-        }
-    }
-
-    fn rect(&self) -> Option<NonZeroRect> {
-        match self {
-            BaseValue::Rect(v) => Some(*v),
             _ => None,
         }
     }
@@ -464,7 +446,7 @@ pub(crate) fn parse_smil_values(
                 false,
                 true,
                 Some(NormalizedF32::ZERO),
-                base_value.stop_offset(),
+                None,
                 |s| warned(parse_offset(s), s),
                 |a, b| NormalizedF32::new_clamped(a.get() + b.get()),
             )?;
@@ -503,7 +485,7 @@ pub(crate) fn parse_smil_values(
                 true,
                 true,
                 None,
-                base_value.rect(),
+                None,
                 |s| warned(parse_rect(s), s),
                 add_rects,
             )?;
@@ -926,10 +908,6 @@ fn warn_invalid_value(value: &str) {
 
 fn warn_invalid_geometry_value(value: &str) {
     log::warn!("Invalid geometry animation value: '{}'.", value);
-}
-
-fn warn_last_additive_geometry() {
-    log::warn!("Only the last additive geometry animation is used.");
 }
 
 fn warn_unsupported_accumulate() {
@@ -1435,20 +1413,5 @@ mod tests {
                 .unwrap(),
             AnimationVisibility::Hidden
         ));
-        assert_eq!(
-            BaseValue::StopOffset(NormalizedF32::new_clamped(0.25))
-                .stop_offset()
-                .unwrap()
-                .get(),
-            0.25
-        );
-        let rect = NonZeroRect::from_xywh(0.0, 0.0, 10.0, 10.0).unwrap();
-        assert_eq!(BaseValue::Rect(rect).rect().unwrap().width(), 10.0);
-    }
-
-    #[test]
-    fn additive_geometry_warning_literal() {
-        // Exercises the cross-animation helper owned by this module.
-        warn_last_additive_geometry();
     }
 }

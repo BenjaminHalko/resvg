@@ -222,8 +222,7 @@ fn raw_begin_list<'a, 'input>(node: SvgNode<'a, 'input>) -> Vec<RawBegin> {
 /// Returns whether a node has a non-empty `end` list.
 fn has_end_entries<'a, 'input>(node: SvgNode<'a, 'input>) -> bool {
     node.attribute::<&str>(AId::End)
-        .map(|value| value.split(';').any(|entry| !entry.trim().is_empty()))
-        .unwrap_or(false)
+        .is_some_and(|value| value.split(';').any(|entry| !entry.trim().is_empty()))
 }
 
 /// Parses a single `begin`/`end` list entry into a [`RawBegin`].

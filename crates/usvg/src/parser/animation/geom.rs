@@ -244,7 +244,7 @@ fn bake_geometry_animation_inner(
     let calc_mode = if interpolable {
         calc_mode
     } else {
-        warn_not_interpolable();
+        log::warn!("Animation values are not interpolable; using discrete interpolation.");
         CalcMode::Discrete
     };
 
@@ -382,7 +382,9 @@ fn bake_points(
         let offset = *key_offsets.get(i)?;
         let timing_function = key_timing_fns.get(i).copied().flatten();
 
-        let points = parse_points_list(raw);
+        let points: Vec<_> = svgtypes::PointsParser::from(raw)
+            .map(|(x, y)| Point::from_xy(x as f32, y as f32))
+            .collect();
         let Some(path) = polyline_path(&points, closed) else {
             warn_invalid_geometry_value(raw);
             continue;
@@ -457,7 +459,7 @@ fn bake_accumulation(
     }
 
     if multi_param {
-        warn_unsupported_accumulate();
+        log::warn!("Unsupported accumulate value; ignoring.");
         return None;
     }
 
@@ -552,23 +554,8 @@ fn parse_path_data(data: &str) -> Option<(Path, bool)> {
     builder.finish().map(|path| (path, renderable))
 }
 
-/// Parses a `points` list into an ordered point vector.
-fn parse_points_list(data: &str) -> Vec<Point> {
-    svgtypes::PointsParser::from(data)
-        .map(|(x, y)| Point::from_xy(x as f32, y as f32))
-        .collect()
-}
-
-fn warn_not_interpolable() {
-    log::warn!("Animation values are not interpolable; using discrete interpolation.");
-}
-
 fn warn_invalid_geometry_value(value: impl std::fmt::Display) {
     log::warn!("Invalid geometry animation value: '{}'.", value);
-}
-
-fn warn_unsupported_accumulate() {
-    log::warn!("Unsupported accumulate value; ignoring.");
 }
 
 #[cfg(test)]

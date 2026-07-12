@@ -281,7 +281,7 @@ fn parse_animation(
                     state,
                 )?
             } else {
-                let values = parse_smil_values(
+                parse_smil_values(
                     attribute_name,
                     if is_set {
                         node.attribute(AId::To)
@@ -309,8 +309,7 @@ fn parse_animation(
                     easing.calc_mode(),
                     easing.key_times(),
                     &base_value(target, attribute_name, state),
-                )?;
-                values
+                )?
             };
             (values.kind, easing, values.additive, values.accumulate)
         }

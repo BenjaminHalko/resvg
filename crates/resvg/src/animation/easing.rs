@@ -9,26 +9,6 @@
 
 use usvg::{StepPosition, TimingFunction};
 
-/// The `ease` keyword bezier control points.
-pub(crate) const EASE: (f32, f32, f32, f32) = (0.25, 0.1, 0.25, 1.0);
-/// The `ease-in` keyword bezier control points.
-pub(crate) const EASE_IN: (f32, f32, f32, f32) = (0.42, 0.0, 1.0, 1.0);
-/// The `ease-out` keyword bezier control points.
-pub(crate) const EASE_OUT: (f32, f32, f32, f32) = (0.0, 0.0, 0.58, 1.0);
-/// The `ease-in-out` keyword bezier control points.
-pub(crate) const EASE_IN_OUT: (f32, f32, f32, f32) = (0.42, 0.0, 0.58, 1.0);
-
-/// Resolves a CSS easing keyword into its cubic-bezier control points.
-pub(crate) fn keyword_bezier(keyword: &str) -> Option<(f32, f32, f32, f32)> {
-    match keyword {
-        "ease" => Some(EASE),
-        "ease-in" => Some(EASE_IN),
-        "ease-out" => Some(EASE_OUT),
-        "ease-in-out" => Some(EASE_IN_OUT),
-        _ => None,
-    }
-}
-
 /// Evaluates a CSS `cubic-bezier(x1, y1, x2, y2)` easing at `t`.
 ///
 /// The control polygon is `P0 = (0, 0)`, `P1 = (x1, y1)`, `P2 = (x2, y2)`,
@@ -138,6 +118,21 @@ pub(crate) fn apply_timing_function(tf: &TimingFunction, progress: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const EASE: (f32, f32, f32, f32) = (0.25, 0.1, 0.25, 1.0);
+    const EASE_IN: (f32, f32, f32, f32) = (0.42, 0.0, 1.0, 1.0);
+    const EASE_OUT: (f32, f32, f32, f32) = (0.0, 0.0, 0.58, 1.0);
+    const EASE_IN_OUT: (f32, f32, f32, f32) = (0.42, 0.0, 0.58, 1.0);
+
+    fn keyword_bezier(keyword: &str) -> Option<(f32, f32, f32, f32)> {
+        match keyword {
+            "ease" => Some(EASE),
+            "ease-in" => Some(EASE_IN),
+            "ease-out" => Some(EASE_OUT),
+            "ease-in-out" => Some(EASE_IN_OUT),
+            _ => None,
+        }
+    }
 
     fn approx(a: f32, b: f32) {
         assert!((a - b).abs() < 1e-4, "expected {b}, got {a}");

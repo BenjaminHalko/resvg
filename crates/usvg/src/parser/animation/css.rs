@@ -110,9 +110,9 @@ fn parse_keyframes_block(css: &str, at: usize) -> Option<(KeyframesRule, usize)>
     let bytes = css.as_bytes();
     let len = bytes.len();
 
-    let mut i = skip_ws_comments(bytes, at + 1 + "keyframes".len());
-    let (name, after_name) = read_name(css, i);
-    i = skip_ws_comments(bytes, after_name);
+    let i = skip_ws_comments(bytes, at + 1 + "keyframes".len());
+    let (name, i) = read_name(css, i);
+    let i = skip_ws_comments(bytes, i);
     if i >= len || bytes[i] != b'{' {
         return None;
     }
@@ -134,7 +134,7 @@ fn read_name(css: &str, i: usize) -> (String, usize) {
         } else {
             end
         };
-        (css.get(i + 1..inner_end).unwrap_or("").to_string(), end)
+        (css[i + 1..inner_end].to_string(), end)
     } else {
         let mut j = i;
         while j < len {
@@ -867,12 +867,14 @@ fn parse_step_position(keyword: &str) -> Option<StepPosition> {
 
 fn parse_cubic_bezier(arguments: &str) -> Option<TimingFunction> {
     let mut values = [0.0f32; 4];
-    let mut count = 0;
-    for part in arguments.split(',') {
-        *values.get_mut(count)? = parse_finite(part.trim())?;
-        count += 1;
+    let mut arguments = arguments.split(',');
+    for value in &mut values {
+        *value = parse_finite(arguments.next()?.trim())?;
     }
-    (count == 4).then(|| TimingFunction::CubicBezier(values[0], values[1], values[2], values[3]))
+    arguments
+        .next()
+        .is_none()
+        .then(|| TimingFunction::CubicBezier(values[0], values[1], values[2], values[3]))
 }
 
 fn parse_css_opacity(value: &str) -> Option<Opacity> {
