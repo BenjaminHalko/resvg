@@ -1,0 +1,6 @@
+// Copyright 2019 the Resvg Authors
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+//! Parsing of SMIL and CSS animation elements.
+
+pub(crate) mod motion;

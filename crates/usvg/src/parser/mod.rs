@@ -16,6 +16,8 @@ mod switch;
 mod units;
 mod use_node;
 
+#[cfg(feature = "animation")]
+mod animation;
 #[cfg(feature = "text")]
 mod text;
 #[cfg(feature = "text")]
