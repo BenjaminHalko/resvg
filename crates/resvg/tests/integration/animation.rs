@@ -103,6 +103,21 @@ fn wrapper_transform_offsets_bbox() {
 }
 
 #[test]
+fn use_instance_animations_drive_referenced_content() {
+    let svg = r##"<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <rect id="template" width="20" height="20" fill="blue"/>
+        </defs>
+        <use href="#template">
+            <animateTransform attributeName="transform" type="translate" from="0 0" to="20 0" begin="0s" dur="4s" fill="freeze"/>
+        </use>
+    </svg>"##;
+
+    assert_eq!(rgb_at(&render_at_pixmap(svg, 0.0), 10, 10), (0, 0, 255));
+    assert_eq!(rgb_at(&render_at_pixmap(svg, 2.0), 25, 10), (0, 0, 255));
+}
+
+#[test]
 fn animated_opacity_forces_isolation() {
     // An animated `opacity` on a rect whose static wrapper opacity is 1: a known
     // interior pixel's alpha drops between t=0 and t=mid, proving forced

@@ -723,7 +723,25 @@ fn parse_svg_use_element<'input>(
         depth + 1,
         doc,
         id_map,
-    )
+    )?;
+
+    for child in node
+        .children()
+        .filter(|child| parse_tag_name(*child).is_some_and(|tag| tag.is_animation()))
+    {
+        parse_xml_node(
+            child,
+            node,
+            parent_id,
+            style_sheet,
+            false,
+            depth + 1,
+            doc,
+            id_map,
+        )?;
+    }
+
+    Ok(())
 }
 
 #[cfg(not(feature = "animation"))]
