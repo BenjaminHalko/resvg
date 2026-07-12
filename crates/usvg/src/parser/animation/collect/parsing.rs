@@ -12,7 +12,7 @@ use super::targets::map_target_kind;
 use crate::parser::converter;
 use crate::parser::svgtree::{AId, EId, NodeId, SvgNode};
 use crate::tree::animation::{
-    Accumulate, Additive, Animation, AnimationSource, Easing, Timing, TransformKind,
+    Accumulate, Additive, Animation, AnimationSource, CalcMode, Easing, Timing, TransformKind,
 };
 
 pub(super) fn parse_animation(
@@ -50,6 +50,7 @@ pub(super) fn parse_animation(
                 easing.key_times(),
                 None,
             )?;
+            let easing = with_calc_mode(easing, values.calc_mode);
             (values.kind, easing, values.additive, values.accumulate)
         }
         EId::Animate | EId::AnimateColor | EId::Set => {
@@ -103,6 +104,7 @@ pub(super) fn parse_animation(
                     &base_value(target, attribute_name, state),
                 )?
             };
+            let easing = with_calc_mode(easing, values.calc_mode);
             (values.kind, easing, values.additive, values.accumulate)
         }
         _ => return None,
@@ -126,6 +128,20 @@ pub(super) fn parse_animation(
         AnimationSource::Smil,
         suppressed_by_important,
     )))
+}
+
+/// Applies a value-layer calculation mode onto the easing when it forces a
+/// stricter mode than the timing declared (an interpolable mismatch forces
+/// discrete stepping).
+fn with_calc_mode(easing: Easing, calc_mode: CalcMode) -> Easing {
+    if std::mem::discriminant(&easing.calc_mode()) == std::mem::discriminant(&calc_mode) {
+        return easing;
+    }
+    Easing::new(
+        calc_mode,
+        easing.key_times().map(<[_]>::to_vec),
+        easing.key_splines().map(<[_]>::to_vec),
+    )
 }
 
 fn parse_transform_kind(value: &str) -> Option<TransformKind> {

@@ -1,6 +1,8 @@
 // Copyright 2026 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+#![allow(clippy::too_many_arguments)]
+
 use svgtypes::Length;
 
 use super::super::geom::{

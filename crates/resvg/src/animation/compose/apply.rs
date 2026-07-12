@@ -221,7 +221,7 @@ impl ImageState {
     }
 
     pub(super) fn finish(self) -> Option<ImageGeometry> {
-        (self.available && self.touched).then(|| ImageGeometry {
+        (self.available && self.touched).then_some(ImageGeometry {
             x: self.quad.0,
             y: self.quad.1,
             w: self.quad.2,

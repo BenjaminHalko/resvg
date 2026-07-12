@@ -777,6 +777,7 @@ impl AId {
     }
 
     /// Checks if this is an animation attribute.
+    #[cfg(not(feature = "animation"))]
     pub(crate) fn is_animation(&self) -> bool {
         matches!(
             self,

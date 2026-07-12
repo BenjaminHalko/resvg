@@ -1,6 +1,8 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+#![allow(clippy::too_many_arguments)]
+
 use crate::NormalizedF32;
 
 /// A normalized position within a keyframe sequence.
