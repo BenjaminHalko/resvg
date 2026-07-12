@@ -14,7 +14,8 @@ use std::sync::Arc;
 use tiny_skia_path::{Path, PathBuilder, PathSegment, Point};
 
 use crate::parser::shapes::{
-    animated_rect_path, circle_path, ellipse_path, line_path, polyline_path, rect_path,
+    animated_ellipse_path, animated_rect_path, circle_path, ellipse_path, line_path, polyline_path,
+    rect_path,
 };
 use crate::parser::svgtree::EId;
 use crate::tree::animation::{
@@ -243,6 +244,12 @@ fn build_animated_shape_path(
             geometry.rx,
             geometry.ry,
         );
+    }
+    if element_tag == EId::Circle && attribute_name == "r" {
+        return animated_ellipse_path(geometry.cx, geometry.cy, geometry.r, geometry.r);
+    }
+    if element_tag == EId::Ellipse && matches!(attribute_name, "rx" | "ry") {
+        return animated_ellipse_path(geometry.cx, geometry.cy, geometry.rx, geometry.ry);
     }
     build_shape_path(element_tag, &geometry)
 }

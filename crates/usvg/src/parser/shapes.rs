@@ -168,6 +168,19 @@ pub(crate) fn animated_rect_path(
     builder.finish()
 }
 
+#[cfg(feature = "animation")]
+pub(crate) fn animated_ellipse_path(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<Path> {
+    let k = 0.552_284_8;
+    let mut builder = tiny_skia_path::PathBuilder::new();
+    builder.move_to(cx + rx, cy);
+    builder.cubic_to(cx + rx, cy + k * ry, cx + k * rx, cy + ry, cx, cy + ry);
+    builder.cubic_to(cx - k * rx, cy + ry, cx - rx, cy + k * ry, cx - rx, cy);
+    builder.cubic_to(cx - rx, cy - k * ry, cx - k * rx, cy - ry, cx, cy - ry);
+    builder.cubic_to(cx + k * rx, cy - ry, cx + rx, cy - k * ry, cx + rx, cy);
+    builder.close();
+    builder.finish()
+}
+
 fn resolve_rx_ry(node: SvgNode, state: &converter::State) -> (f32, f32) {
     let mut rx_opt = node.attribute::<Length>(AId::Rx);
     let mut ry_opt = node.attribute::<Length>(AId::Ry);
