@@ -281,6 +281,9 @@ fn apply(
             overrides.hidden = Some(!matches!(visibility, AnimationVisibility::Visible));
         }
         SampledValue::Path(path, renderable) => {
+            if matches!(kind, AnimationKind::Path(track) if track.replaces_geometry()) {
+                overrides.paths.clear();
+            }
             overrides.path = Some((path.clone(), renderable));
             overrides.paths.push((path, renderable));
         }

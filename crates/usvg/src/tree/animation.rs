@@ -661,6 +661,7 @@ impl PathKeyframe {
 pub struct PathTrack {
     pub(crate) keyframes: Vec<PathKeyframe>,
     pub(crate) accumulation_delta: Option<Arc<tiny_skia_path::Path>>,
+    pub(crate) replaces_geometry: bool,
 }
 
 impl PathTrack {
@@ -672,6 +673,19 @@ impl PathTrack {
         Self {
             keyframes,
             accumulation_delta,
+            replaces_geometry: false,
+        }
+    }
+
+    /// Creates a path track that replaces every prior geometry contribution.
+    pub(crate) fn new_replacing_geometry(
+        keyframes: Vec<PathKeyframe>,
+        accumulation_delta: Option<Arc<tiny_skia_path::Path>>,
+    ) -> Self {
+        Self {
+            keyframes,
+            accumulation_delta,
+            replaces_geometry: true,
         }
     }
 
@@ -683,6 +697,11 @@ impl PathTrack {
     /// The accumulation delta path, if `accumulate=sum` was specified.
     pub fn accumulation_delta(&self) -> Option<&tiny_skia_path::Path> {
         self.accumulation_delta.as_deref()
+    }
+
+    /// Whether this track replaces all prior geometry contributions.
+    pub fn replaces_geometry(&self) -> bool {
+        self.replaces_geometry
     }
 }
 

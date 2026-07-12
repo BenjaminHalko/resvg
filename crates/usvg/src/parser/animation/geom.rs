@@ -261,8 +261,14 @@ fn bake_geometry_animation_inner(
         .map(|k| PathKeyframe::new(k.offset, Arc::new(k.path), k.renderable, k.timing_function))
         .collect();
 
+    let track = if matches!(attribute_name, "d" | "points") {
+        PathTrack::new_replacing_geometry(path_keyframes, accumulation_delta)
+    } else {
+        PathTrack::new(path_keyframes, accumulation_delta)
+    };
+
     Some(GeometryBake {
-        kind: AnimationKind::Path(PathTrack::new(path_keyframes, accumulation_delta)),
+        kind: AnimationKind::Path(track),
         calc_mode,
     })
 }
@@ -343,7 +349,7 @@ fn bake_path_data(
         let offset = *key_offsets.get(i)?;
         let timing_function = key_timing_fns.get(i).copied().flatten();
 
-        let Some(path) = parse_path_data(raw) else {
+        let Some((path, renderable)) = parse_path_data(raw) else {
             warn_invalid_geometry_value(raw);
             continue;
         };
@@ -351,7 +357,7 @@ fn bake_path_data(
         keyframes.push(RawKeyframe {
             offset,
             path,
-            renderable: true,
+            renderable,
             timing_function,
         });
     }
@@ -503,15 +509,25 @@ fn subtract_paths(base: &Path, end: &Path) -> Option<Path> {
 }
 
 /// Parses absolute path data into a path, mirroring `shapes::convert_path`.
-fn parse_path_data(data: &str) -> Option<Path> {
+fn parse_path_data(data: &str) -> Option<(Path, bool)> {
     let mut builder = PathBuilder::new();
+    let mut last_move = None;
+    let mut renderable = false;
     for segment in svgtypes::SimplifyingPathParser::from(data) {
         let Ok(segment) = segment else { break };
         match segment {
-            svgtypes::SimplePathSegment::MoveTo { x, y } => builder.move_to(x as f32, y as f32),
-            svgtypes::SimplePathSegment::LineTo { x, y } => builder.line_to(x as f32, y as f32),
+            svgtypes::SimplePathSegment::MoveTo { x, y } => {
+                let point = (x as f32, y as f32);
+                builder.move_to(point.0, point.1);
+                last_move = Some(point);
+            }
+            svgtypes::SimplePathSegment::LineTo { x, y } => {
+                builder.line_to(x as f32, y as f32);
+                renderable = true;
+            }
             svgtypes::SimplePathSegment::Quadratic { x1, y1, x, y } => {
-                builder.quad_to(x1 as f32, y1 as f32, x as f32, y as f32)
+                builder.quad_to(x1 as f32, y1 as f32, x as f32, y as f32);
+                renderable = true;
             }
             svgtypes::SimplePathSegment::CurveTo {
                 x1,
@@ -520,13 +536,20 @@ fn parse_path_data(data: &str) -> Option<Path> {
                 y2,
                 x,
                 y,
-            } => builder.cubic_to(
-                x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32,
-            ),
+            } => {
+                builder.cubic_to(
+                    x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32,
+                );
+                renderable = true;
+            }
             svgtypes::SimplePathSegment::ClosePath => builder.close(),
         }
     }
-    builder.finish()
+    if !renderable {
+        let (x, y) = last_move?;
+        builder.line_to(x, y);
+    }
+    builder.finish().map(|path| (path, renderable))
 }
 
 /// Parses a `points` list into an ordered point vector.
@@ -576,6 +599,14 @@ mod tests {
             AnimationKind::Path(track) => track,
             other => panic!("expected a path track, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn move_only_path_keyframe_is_preserved_as_nonrenderable() {
+        let baked = bake_path_data(&["M-338,462"], &[n(0.0)], &[None]).unwrap();
+
+        assert_eq!(baked.keyframes.len(), 1);
+        assert!(!baked.keyframes[0].renderable);
     }
 
     #[test]

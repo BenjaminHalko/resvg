@@ -580,6 +580,18 @@ fn animated_mask_content_shifts_coverage() {
 }
 
 #[test]
+fn later_set_path_replaces_an_incompatible_frozen_path() {
+    let svg = r#"<svg width="30" height="30" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0 10 H10" fill="none" stroke="black" stroke-width="4">
+            <set attributeName="d" to="M0 10 H10" begin="0s" dur="1s" fill="freeze"/>
+            <set attributeName="d" to="M0 10 H10 V20" begin="1s" dur="1s" fill="freeze"/>
+        </path>
+    </svg>"#;
+
+    assert!(alpha_at(&render_at_pixmap(svg, 2.0), 10, 18) > 200);
+}
+
+#[test]
 fn animated_clip_path_content_shifts_coverage() {
     // A `clipPath` child with an `animateTransform`: the clipped region of the
     // green fill translates right, proving `clip.rs` samples the subtree.
