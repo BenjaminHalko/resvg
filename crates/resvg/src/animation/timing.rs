@@ -160,13 +160,13 @@ pub(crate) fn css_progress(timing: &CssTiming, t: f32) -> Option<f32> {
 /// final iteration is held at progress `1.0` rather than wrapping to `0.0` of
 /// the next iteration.
 fn directed_progress(raw: f32, direction: Direction, at_end: bool) -> f32 {
-    let (iteration, iter_progress) = if at_end && raw > 0.0 && (raw - raw.round()).abs() <= f32::EPSILON
-    {
-        (raw.round() - 1.0, 1.0)
-    } else {
-        let floored = raw.floor();
-        (floored, raw - floored)
-    };
+    let (iteration, iter_progress) =
+        if at_end && raw > 0.0 && (raw - raw.round()).abs() <= f32::EPSILON {
+            (raw.round() - 1.0, 1.0)
+        } else {
+            let floored = raw.floor();
+            (floored, raw - floored)
+        };
 
     let odd = (iteration % 2.0) >= 1.0;
     let reverse = match direction {

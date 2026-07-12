@@ -162,8 +162,10 @@ fn locate_track<T: Clone>(
     }
 
     let offsets: Vec<f32> = keyframes.iter().map(|k| k.offset().get()).collect();
-    let timings: Vec<Option<TimingFunction>> =
-        keyframes.iter().map(|k| k.timing_function().copied()).collect();
+    let timings: Vec<Option<TimingFunction>> = keyframes
+        .iter()
+        .map(|k| k.timing_function().copied())
+        .collect();
 
     Some(locate(
         &offsets,
@@ -296,7 +298,10 @@ fn paced_of<T: Clone>(
 }
 
 /// Maps each adjacent keyframe pair to its distance under `metric`.
-fn segment_metrics<T: Clone>(keyframes: &[Keyframe<T>], metric: impl Fn(&T, &T) -> f32) -> Vec<f32> {
+fn segment_metrics<T: Clone>(
+    keyframes: &[Keyframe<T>],
+    metric: impl Fn(&T, &T) -> f32,
+) -> Vec<f32> {
     (0..keyframes.len().saturating_sub(1))
         .map(|i| metric(keyframes[i].value(), keyframes[i + 1].value()))
         .collect()
@@ -336,7 +341,11 @@ fn sample_miterlimit(
 ) -> Option<f32> {
     let paced = paced_of(keyframes, easing, |a, b| (a.get() - b.get()).abs());
     let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
-    Some(lerp(keyframes[lo].value().get(), keyframes[hi].value().get(), t))
+    Some(lerp(
+        keyframes[lo].value().get(),
+        keyframes[hi].value().get(),
+        t,
+    ))
 }
 
 /// Samples a color track by lerping each sRGB channel.
@@ -358,7 +367,9 @@ fn lerp_color(a: &Color, b: &Color, t: f32) -> Color {
 
 /// Lerps a single 8-bit color channel, rounding to the nearest value.
 fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
-    lerp(f32::from(a), f32::from(b), t).round().clamp(0.0, 255.0) as u8
+    lerp(f32::from(a), f32::from(b), t)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 /// The Euclidean distance between two colors over RGBA channels.
@@ -477,7 +488,9 @@ fn smil_paced_distances(kind: TransformKind, keyframes: &[Keyframe<Vec<f32>>]) -
             (param(a, 0, 0.0) - param(b, 0, 0.0)).abs()
         })),
         TransformKind::Rotate => rotate_center_constant(keyframes).then(|| {
-            segment_metrics(keyframes, |a, b| (param(a, 0, 0.0) - param(b, 0, 0.0)).abs())
+            segment_metrics(keyframes, |a, b| {
+                (param(a, 0, 0.0) - param(b, 0, 0.0)).abs()
+            })
         }),
     }
 }
@@ -642,8 +655,10 @@ fn sample_path(track: &PathTrack, easing: &Easing, progress: f32) -> Option<(Arc
     }
 
     let offsets: Vec<f32> = keyframes.iter().map(|k| k.offset().get()).collect();
-    let timings: Vec<Option<TimingFunction>> =
-        keyframes.iter().map(|k| k.timing_function().copied()).collect();
+    let timings: Vec<Option<TimingFunction>> = keyframes
+        .iter()
+        .map(|k| k.timing_function().copied())
+        .collect();
     let paced = if matches!(easing.calc_mode(), CalcMode::Paced) {
         Some(
             (0..keyframes.len().saturating_sub(1))
@@ -880,7 +895,9 @@ fn uniform_offsets(count: usize) -> Vec<f32> {
     if count <= 1 {
         return vec![0.0];
     }
-    (0..count).map(|i| i as f32 / (count as f32 - 1.0)).collect()
+    (0..count)
+        .map(|i| i as f32 / (count as f32 - 1.0))
+        .collect()
 }
 
 /// The Euclidean distance between two points.
@@ -1061,9 +1078,21 @@ mod tests {
     fn single_keyframe_is_constant() {
         // A `set`-style single-keyframe track holds its one value everywhere.
         let kind = AnimationKind::StrokeWidth(scalar_track(&[(0.0, 7.0)]));
-        approx(expect_scalar(interpolate_track(&kind, &linear(), 0.0)), 7.0, 1e-4);
-        approx(expect_scalar(interpolate_track(&kind, &linear(), 0.5)), 7.0, 1e-4);
-        approx(expect_scalar(interpolate_track(&kind, &linear(), 1.0)), 7.0, 1e-4);
+        approx(
+            expect_scalar(interpolate_track(&kind, &linear(), 0.0)),
+            7.0,
+            1e-4,
+        );
+        approx(
+            expect_scalar(interpolate_track(&kind, &linear(), 0.5)),
+            7.0,
+            1e-4,
+        );
+        approx(
+            expect_scalar(interpolate_track(&kind, &linear(), 1.0)),
+            7.0,
+            1e-4,
+        );
     }
 
     #[test]
@@ -1074,11 +1103,23 @@ mod tests {
             AnimationKind::StrokeWidth(scalar_track(&[(0.0, 0.0), (0.5, 10.0), (1.0, 100.0)]));
         let easing = paced();
 
-        approx(expect_scalar(interpolate_track(&kind, &easing, 0.05)), 5.0, 1e-3);
-        approx(expect_scalar(interpolate_track(&kind, &easing, 0.55)), 55.0, 1e-3);
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 0.05)),
+            5.0,
+            1e-3,
+        );
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 0.55)),
+            55.0,
+            1e-3,
+        );
 
         // The linear reading at the same progress differs, proving paced spacing.
-        approx(expect_scalar(interpolate_track(&kind, &linear(), 0.05)), 1.0, 1e-3);
+        approx(
+            expect_scalar(interpolate_track(&kind, &linear(), 0.05)),
+            1.0,
+            1e-3,
+        );
     }
 
     #[test]
@@ -1097,20 +1138,41 @@ mod tests {
     #[test]
     fn discrete_stepping_holds_last() {
         // Values step on half-open intervals and the last holds past its offset.
-        let kind = AnimationKind::StrokeWidth(scalar_track(&[
-            (0.0, 10.0),
-            (0.4, 20.0),
-            (0.8, 30.0),
-        ]));
+        let kind =
+            AnimationKind::StrokeWidth(scalar_track(&[(0.0, 10.0), (0.4, 20.0), (0.8, 30.0)]));
         let easing = discrete();
 
-        approx(expect_scalar(interpolate_track(&kind, &easing, 0.0)), 10.0, 1e-4);
-        approx(expect_scalar(interpolate_track(&kind, &easing, 0.39)), 10.0, 1e-4);
-        approx(expect_scalar(interpolate_track(&kind, &easing, 0.4)), 20.0, 1e-4);
-        approx(expect_scalar(interpolate_track(&kind, &easing, 0.79)), 20.0, 1e-4);
-        approx(expect_scalar(interpolate_track(&kind, &easing, 0.8)), 30.0, 1e-4);
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 0.0)),
+            10.0,
+            1e-4,
+        );
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 0.39)),
+            10.0,
+            1e-4,
+        );
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 0.4)),
+            20.0,
+            1e-4,
+        );
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 0.79)),
+            20.0,
+            1e-4,
+        );
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 0.8)),
+            30.0,
+            1e-4,
+        );
         // The last value holds from 0.8 to the end of the simple duration.
-        approx(expect_scalar(interpolate_track(&kind, &easing, 1.0)), 30.0, 1e-4);
+        approx(
+            expect_scalar(interpolate_track(&kind, &easing, 1.0)),
+            30.0,
+            1e-4,
+        );
     }
 
     #[test]
@@ -1129,7 +1191,11 @@ mod tests {
         let sampled = expect_transform(interpolate_track(&kind, &linear(), 0.5));
         approx_transform(sampled, Transform::from_rotate_at(135.0, 0.0, 0.0), 1e-4);
         // The shortest-arc blend (-45) would give the opposite-sign shear.
-        assert!(sampled.ky > 0.0, "135deg keeps a positive sin, got {}", sampled.ky);
+        assert!(
+            sampled.ky > 0.0,
+            "135deg keeps a positive sin, got {}",
+            sampled.ky
+        );
     }
 
     #[test]
@@ -1150,7 +1216,11 @@ mod tests {
         approx_transform(at_quarter, Transform::from_rotate_at(90.0, 0.0, 0.0), 1e-3);
         // Linear at the same progress would only reach 45 degrees.
         let linear_quarter = expect_transform(interpolate_track(&kind, &linear(), 0.25));
-        approx_transform(linear_quarter, Transform::from_rotate_at(45.0, 0.0, 0.0), 1e-3);
+        approx_transform(
+            linear_quarter,
+            Transform::from_rotate_at(45.0, 0.0, 0.0),
+            1e-3,
+        );
     }
 
     #[test]
@@ -1170,7 +1240,9 @@ mod tests {
         // A varying center has no principled paced metric: fall back to linear.
         let sampled = expect_transform(interpolate_track(&kind, &paced(), 0.5));
         approx_transform(sampled, Transform::from_rotate_at(45.0, 5.0, 5.0), 1e-3);
-        assert!(warned("Paced interpolation is not supported here; using linear."));
+        assert!(warned(
+            "Paced interpolation is not supported here; using linear."
+        ));
     }
 
     #[test]
@@ -1213,7 +1285,9 @@ mod tests {
         // Structurally incompatible lists step to the low keyframe (translate 0).
         let sampled = expect_transform(interpolate_track(&kind, &linear(), 0.5));
         approx_transform(sampled, Transform::from_translate(0.0, 0.0), 1e-4);
-        assert!(warned("Unsupported transform animation; using discrete interpolation."));
+        assert!(warned(
+            "Unsupported transform animation; using discrete interpolation."
+        ));
     }
 
     #[test]
@@ -1366,8 +1440,8 @@ mod tests {
     #[test]
     fn motion_straight_baseline_length() {
         // Two axis-aligned segments: 100 across then 100 down = 200 exactly.
-        let table = ArcLength::build(&line_path(&[(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)]))
-            .unwrap();
+        let table =
+            ArcLength::build(&line_path(&[(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)])).unwrap();
         approx(table.total, 200.0, 1e-3);
     }
 
@@ -1430,7 +1504,11 @@ mod tests {
     #[test]
     fn motion_tangent_drives_auto_rotation() {
         // A 45-degree diagonal yields a 45-degree auto rotation at every point.
-        let track = MotionTrack::new(line_path(&[(0.0, 0.0), (100.0, 100.0)]), None, MotionRotate::Auto);
+        let track = MotionTrack::new(
+            line_path(&[(0.0, 0.0), (100.0, 100.0)]),
+            None,
+            MotionRotate::Auto,
+        );
         let kind = AnimationKind::Motion(track);
         let sampled = match interpolate_track(&kind, &paced(), 0.5) {
             Some(SampledValue::Motion(t)) => t,

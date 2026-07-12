@@ -264,9 +264,14 @@ fn render_animated_image(
         .unwrap_or_else(|| carrier.static_quad());
 
     // A non-positive width or height hides the image at this frame.
-    let Some(viewport) =
-        usvg::image_viewport(x, y, width, height, carrier.aspect(), carrier.intrinsic_size())
-    else {
+    let Some(viewport) = usvg::image_viewport(
+        x,
+        y,
+        width,
+        height,
+        carrier.aspect(),
+        carrier.intrinsic_size(),
+    ) else {
         return Some(());
     };
 
@@ -312,7 +317,12 @@ fn render_image_slice(
     let mut sub_pixmap = tiny_skia::Pixmap::new(ibbox.width(), ibbox.height())
         .log_none(|| log::warn!("Failed to allocate an image layer for: {:?}.", ibbox))?;
 
-    render_nodes(group, ctx, shift.pre_concat(image_transform), &mut sub_pixmap.as_mut());
+    render_nodes(
+        group,
+        ctx,
+        shift.pre_concat(image_transform),
+        &mut sub_pixmap.as_mut(),
+    );
 
     let mut mask = tiny_skia::Mask::new(ibbox.width(), ibbox.height())?;
     mask.fill_path(

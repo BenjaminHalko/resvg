@@ -338,7 +338,13 @@ pub fn apply(
     source: &mut tiny_skia::Pixmap,
     #[cfg(feature = "animation")] time: Option<f32>,
 ) {
-    let result = apply_inner(filter, ts, source, #[cfg(feature = "animation")] time);
+    let result = apply_inner(
+        filter,
+        ts,
+        source,
+        #[cfg(feature = "animation")]
+        time,
+    );
     let result = result.and_then(|image| apply_to_canvas(image, source));
 
     // Clear on error.

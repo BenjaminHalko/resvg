@@ -162,7 +162,8 @@ pub(crate) fn resolve_fill_carrier(
     Some(FillCarrierState::new(
         true,
         None,
-        node.find_attribute(AId::FillOpacity).unwrap_or(Opacity::ONE),
+        node.find_attribute(AId::FillOpacity)
+            .unwrap_or(Opacity::ONE),
         node.find_attribute(AId::FillRule).unwrap_or_default(),
     ))
 }
@@ -215,11 +216,17 @@ pub(crate) fn resolve_stroke_carrier(
         log::warn!("Stroke width animation on an element without a stroke has no effect.");
     }
 
-    let miterlimit = node.find_attribute(AId::StrokeMiterlimit).unwrap_or(4.0).max(1.0);
+    let miterlimit = node
+        .find_attribute(AId::StrokeMiterlimit)
+        .unwrap_or(4.0)
+        .max(1.0);
     Some(StrokeCarrierState::new(
         true,
         paint,
-        sub_opacity * node.find_attribute(AId::StrokeOpacity).unwrap_or(Opacity::ONE),
+        sub_opacity
+            * node
+                .find_attribute(AId::StrokeOpacity)
+                .unwrap_or(Opacity::ONE),
         node.resolve_length(AId::StrokeWidth, state, 1.0),
         node.find_attribute(AId::StrokeLinecap).unwrap_or_default(),
         node.find_attribute(AId::StrokeLinejoin).unwrap_or_default(),

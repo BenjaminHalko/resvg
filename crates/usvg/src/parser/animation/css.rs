@@ -474,7 +474,11 @@ pub(crate) fn build_css_animations<'a, 'input>(
             continue;
         }
 
-        let Some(rule) = doc.keyframes().iter().find(|rule| rule.name.as_str() == name) else {
+        let Some(rule) = doc
+            .keyframes()
+            .iter()
+            .find(|rule| rule.name.as_str() == name)
+        else {
             log::warn!("Unknown keyframes name: '{}'.", name);
             continue;
         };
@@ -610,7 +614,10 @@ fn animated_properties(rule: &KeyframesRule) -> Vec<String> {
     for keyframe in &rule.keyframes {
         for (property, _) in &keyframe.declarations {
             let property = property.trim();
-            if !names.iter().any(|existing| existing.eq_ignore_ascii_case(property)) {
+            if !names
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(property))
+            {
                 names.push(property.to_string());
             }
         }
@@ -681,9 +688,10 @@ fn property_suppressed_by_important(node: SvgNode, property: &str) -> bool {
 
 fn read_transform_origin(node: SvgNode) -> TransformOrigin {
     match node.try_attribute::<svgtypes::TransformOrigin>(AId::TransformOrigin) {
-        Some(origin) => {
-            TransformOrigin::new(origin_component(origin.x_offset), origin_component(origin.y_offset))
-        }
+        Some(origin) => TransformOrigin::new(
+            origin_component(origin.x_offset),
+            origin_component(origin.y_offset),
+        ),
         None => TransformOrigin::new(
             TransformOriginValue::Percent(50.0),
             TransformOriginValue::Percent(50.0),
@@ -712,11 +720,16 @@ fn read_transform_box(node: SvgNode) -> TransformBox {
 fn split_list(value: &str) -> Vec<&str> {
     // A single value such as `steps(4, jump-end)` may carry its own commas, so
     // the list is split at the top level only.
-    split_top_level(value, b',').into_iter().map(str::trim).collect()
+    split_top_level(value, b',')
+        .into_iter()
+        .map(str::trim)
+        .collect()
 }
 
 fn longhand_list<'a>(node: SvgNode<'a, '_>, aid: AId) -> Vec<&'a str> {
-    node.attribute::<&str>(aid).map(split_list).unwrap_or_default()
+    node.attribute::<&str>(aid)
+        .map(split_list)
+        .unwrap_or_default()
 }
 
 /// Reads the `index`th list entry, cycling as CSS does when a longhand list is
@@ -916,7 +929,9 @@ fn parse_transform_function(name: &str, arguments: &str) -> Option<TransformFunc
         for (slot, argument) in values.iter_mut().zip(arguments.iter().copied()) {
             *slot = parse_finite(argument)?;
         }
-        TransformFunction::Matrix(values[0], values[1], values[2], values[3], values[4], values[5])
+        TransformFunction::Matrix(
+            values[0], values[1], values[2], values[3], values[4], values[5],
+        )
     } else if name.eq_ignore_ascii_case("translate") {
         let tx = parse_length(arguments.first()?)?;
         let ty = match arguments.get(1) {
@@ -1087,8 +1102,7 @@ mod tests {
 
     #[test]
     fn import_is_dropped() {
-        let (rules, remaining) =
-            extract_keyframes("@import url(\"theme.css\"); a { fill: red }");
+        let (rules, remaining) = extract_keyframes("@import url(\"theme.css\"); a { fill: red }");
         assert!(rules.is_empty());
         assert!(!remaining.contains("@import"));
         assert!(remaining.contains("a { fill: red }"));
@@ -1096,7 +1110,8 @@ mod tests {
 
     #[test]
     fn selector_forms_and_comma_lists() {
-        let (rules, _) = extract_keyframes("@keyframes a { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }");
+        let (rules, _) =
+            extract_keyframes("@keyframes a { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }");
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].keyframes[0].offsets, vec![0.0, 1.0]);
         assert_eq!(rules[0].keyframes[1].offsets, vec![0.5]);

@@ -280,7 +280,10 @@ fn is_shape_renderable(element_tag: EId, g: &ShapeGeometry) -> bool {
 
 /// Reports whether an attribute must be non-negative to bake a real shape.
 fn is_non_negative_attribute(attribute_name: &str) -> bool {
-    matches!(attribute_name, "width" | "height" | "r" | "rx" | "ry" | "fr")
+    matches!(
+        attribute_name,
+        "width" | "height" | "r" | "rx" | "ry" | "fr"
+    )
 }
 
 /// Reports whether every keyframe shares one verb sequence.
@@ -377,7 +380,9 @@ fn parse_path_data(data: &str) -> Option<Path> {
                 y2,
                 x,
                 y,
-            } => builder.cubic_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32),
+            } => builder.cubic_to(
+                x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32,
+            ),
             svgtypes::SimplePathSegment::ClosePath => builder.close(),
         }
     }
@@ -664,7 +669,9 @@ mod tests {
         .unwrap();
 
         let track = expect_track(&bake);
-        let delta = track.accumulation_delta().expect("accumulation delta baked");
+        let delta = track
+            .accumulation_delta()
+            .expect("accumulation delta baked");
         // width 10 -> 30: the right edge shifts by 20, the left edge is fixed.
         let points = delta.points();
         assert!(points[0].x.abs() < 1e-4);

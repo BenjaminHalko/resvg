@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use tiny_skia_path::Path;
 
+use crate::NormalizedF32;
 use crate::parser::svgtree::{AId, SvgNode};
 use crate::tree::animation::{AnimationKind, CalcMode, Easing, MotionRotate, MotionTrack};
-use crate::NormalizedF32;
 
 /// Parses an `<animateMotion>` element into a motion animation.
 ///
@@ -86,7 +86,9 @@ fn parse_motion_path(data: &str) -> Option<Arc<Path>> {
                 x,
                 y,
             } => {
-                builder.cubic_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32);
+                builder.cubic_to(
+                    x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32,
+                );
             }
             svgtypes::SimplePathSegment::ClosePath => {
                 builder.close();
@@ -284,9 +286,7 @@ mod tests {
 
     #[test]
     fn zero_length_path_is_invalid() {
-        let svg = format!(
-            "<svg xmlns='{NS}'><rect><animateMotion path='M10 10'/></rect></svg>"
-        );
+        let svg = format!("<svg xmlns='{NS}'><rect><animateMotion path='M10 10'/></rect></svg>");
         with_motion(&svg, |node| {
             assert!(parse_animate_motion(node).is_none());
         });
@@ -344,9 +344,8 @@ mod tests {
 
     #[test]
     fn default_calc_mode_is_paced() {
-        let svg = format!(
-            "<svg xmlns='{NS}'><rect><animateMotion path='M0 0 L10 10'/></rect></svg>"
-        );
+        let svg =
+            format!("<svg xmlns='{NS}'><rect><animateMotion path='M0 0 L10 10'/></rect></svg>");
         with_motion(&svg, |node| {
             let (_, easing) = parse_animate_motion(node).unwrap();
             match easing.calc_mode() {

@@ -156,7 +156,10 @@ mod tests {
     fn cubic_bezier_linear_is_identity() {
         // A bezier with collinear controls behaves like the identity.
         for &t in &[0.1_f32, 0.25, 0.5, 0.75, 0.9] {
-            approx(cubic_bezier(1.0 / 3.0, 1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0, t), t);
+            approx(
+                cubic_bezier(1.0 / 3.0, 1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0, t),
+                t,
+            );
         }
     }
 

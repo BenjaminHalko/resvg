@@ -3,11 +3,11 @@
 
 //! Parsing of SMIL and CSS animation elements.
 
+pub(crate) mod collect;
 pub(crate) mod css;
 pub(crate) mod geom;
 pub(crate) mod motion;
+pub(crate) mod paint;
 pub(crate) mod shorthand;
 pub(crate) mod timing;
 pub(crate) mod values;
-pub(crate) mod collect;
-pub(crate) mod paint;

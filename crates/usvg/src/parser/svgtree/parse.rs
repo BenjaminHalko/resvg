@@ -100,8 +100,7 @@ fn parse<'input>(
     #[cfg(feature = "animation")]
     let css_text = collect_style_text(xml, injected_stylesheet);
     #[cfg(feature = "animation")]
-    let (keyframes, remaining_css) =
-        crate::parser::animation::css::extract_keyframes(&css_text);
+    let (keyframes, remaining_css) = crate::parser::animation::css::extract_keyframes(&css_text);
     #[cfg(feature = "animation")]
     {
         doc.keyframes = keyframes;
@@ -1027,12 +1026,18 @@ mod tests {
         let rect = doc.element_by_id("r").unwrap();
 
         assert_eq!(rect.try_attribute::<&str>(AId::AnimationName), Some("move"));
-        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("4s"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationDuration),
+            Some("4s")
+        );
         assert_eq!(
             rect.try_attribute::<&str>(AId::AnimationTimingFunction),
             Some("steps(4, jump-end)")
         );
-        assert_eq!(rect.try_attribute::<&str>(AId::AnimationFillMode), Some("both"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationFillMode),
+            Some("both")
+        );
         assert_eq!(rect.try_attribute::<&str>(AId::AnimationDelay), Some("0s"));
         assert_eq!(
             rect.try_attribute::<&str>(AId::AnimationIterationCount),
@@ -1091,7 +1096,10 @@ mod tests {
         let rect = doc.element_by_id("r").unwrap();
 
         assert_eq!(rect.try_attribute::<&str>(AId::AnimationName), Some("move"));
-        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("2s"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationDuration),
+            Some("2s")
+        );
     }
 
     #[cfg(feature = "animation")]
@@ -1106,7 +1114,10 @@ mod tests {
         let doc = Document::parse_tree(&xml, None).unwrap();
         let rect = doc.element_by_id("r").unwrap();
 
-        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("4s"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationDuration),
+            Some("4s")
+        );
     }
 
     #[cfg(feature = "animation")]
@@ -1140,7 +1151,10 @@ mod tests {
         let rect = doc.element_by_id("r").unwrap();
 
         assert_eq!(rect.try_attribute::<&str>(AId::AnimationName), Some("none"));
-        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("4s"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationDuration),
+            Some("4s")
+        );
     }
 
     #[cfg(feature = "animation")]

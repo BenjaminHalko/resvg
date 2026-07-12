@@ -668,7 +668,8 @@ fn convert_element_impl(
             #[cfg(feature = "animation")]
             let underlying_renderable = path.is_some();
             #[cfg(feature = "animation")]
-            let path = path.or_else(|| super::animation::collect::synthesized_path(node, state, cache));
+            let path =
+                path.or_else(|| super::animation::collect::synthesized_path(node, state, cache));
             if let Some(path) = path {
                 convert_path(
                     node,
@@ -764,7 +765,8 @@ fn convert_clip_path_elements_impl(
             #[cfg(feature = "animation")]
             let underlying_renderable = path.is_some();
             #[cfg(feature = "animation")]
-            let path = path.or_else(|| super::animation::collect::synthesized_path(node, state, cache));
+            let path =
+                path.or_else(|| super::animation::collect::synthesized_path(node, state, cache));
             if let Some(path) = path {
                 convert_path(
                     node,
@@ -1103,7 +1105,11 @@ fn convert_path(
     #[cfg(feature = "animation")]
     {
         let animations = super::animation::collect::renderable_animations(node, state, cache);
-        if !animations.is_empty() || fill_carrier.is_some() || stroke_carrier.is_some() || !underlying_renderable {
+        if !animations.is_empty()
+            || fill_carrier.is_some()
+            || stroke_carrier.is_some()
+            || !underlying_renderable
+        {
             path.animation = Some(Box::new(NodeAnimation::new(
                 animations,
                 super::animation::collect::base_hidden(node),

@@ -191,11 +191,9 @@ fn is_fill_mode(token: &str) -> bool {
 }
 
 fn is_name(token: &str) -> bool {
-    if [
-        "initial", "inherit", "unset", "revert", "default", "none",
-    ]
-    .iter()
-    .any(|k| token.eq_ignore_ascii_case(k))
+    if ["initial", "inherit", "unset", "revert", "default", "none"]
+        .iter()
+        .any(|k| token.eq_ignore_ascii_case(k))
     {
         return false;
     }

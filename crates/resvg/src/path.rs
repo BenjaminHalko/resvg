@@ -100,7 +100,11 @@ pub fn fill_path(
     pixmap: &mut tiny_skia::PixmapMut,
     #[cfg(feature = "animation")] overrides: Option<&SampledOverrides>,
 ) -> Option<()> {
-    let data = effective_data(path, #[cfg(feature = "animation")] overrides);
+    let data = effective_data(
+        path,
+        #[cfg(feature = "animation")]
+        overrides,
+    );
 
     let fill = path.fill();
 
@@ -181,7 +185,11 @@ fn stroke_path(
     pixmap: &mut tiny_skia::PixmapMut,
     #[cfg(feature = "animation")] overrides: Option<&SampledOverrides>,
 ) -> Option<()> {
-    let data = effective_data(path, #[cfg(feature = "animation")] overrides);
+    let data = effective_data(
+        path,
+        #[cfg(feature = "animation")]
+        overrides,
+    );
 
     let stroke = path.stroke();
 

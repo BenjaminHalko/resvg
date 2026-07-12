@@ -59,7 +59,12 @@ pub fn render_at_pixmap(svg: &str, time: f32) -> tiny_skia::Pixmap {
     let tree = usvg::Tree::from_str(svg, &opt).unwrap();
     let mut pixmap =
         tiny_skia::Pixmap::new(tree.size().width() as u32, tree.size().height() as u32).unwrap();
-    resvg::render_at(&tree, time, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    resvg::render_at(
+        &tree,
+        time,
+        tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
     pixmap
 }
 
@@ -70,7 +75,11 @@ pub fn render_pixmap(svg: &str) -> tiny_skia::Pixmap {
     let tree = usvg::Tree::from_str(svg, &opt).unwrap();
     let mut pixmap =
         tiny_skia::Pixmap::new(tree.size().width() as u32, tree.size().height() as u32).unwrap();
-    resvg::render(&tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
     pixmap
 }
 

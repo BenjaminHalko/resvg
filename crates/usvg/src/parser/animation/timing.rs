@@ -1,11 +1,11 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use crate::NormalizedF32;
 use crate::parser::svgtree::{AId, EId, NodeId, SvgNode};
 use crate::tree::animation::{
     Begin, CalcMode, Dur, Easing, Interval, RepeatCount, Restart, SmilFill, SmilTiming,
 };
-use crate::NormalizedF32;
 
 /// A partially-parsed `begin`/`end` value, before syncbase resolution.
 #[derive(Clone, Debug)]
@@ -15,7 +15,11 @@ pub(crate) enum RawBegin {
     /// The `indefinite` value.
     Indefinite,
     /// A syncbase reference (`id.begin`/`id.end`) with an offset.
-    SyncBase { id: String, edge: SyncEdge, offset: f32 },
+    SyncBase {
+        id: String,
+        edge: SyncEdge,
+        offset: f32,
+    },
 }
 
 /// The referenced timing edge of a syncbase value.
@@ -416,7 +420,11 @@ fn parse_repeat_dur<'a, 'input>(node: SvgNode<'a, 'input>) -> Option<f32> {
 ///
 /// Follows the SMIL rule `min(repeatCount * dur, repeatDur)`, treating an
 /// indefinite operand as unbounded.
-fn active_duration(dur: Dur, repeat_count: Option<RepeatCount>, repeat_dur: Option<f32>) -> Option<f32> {
+fn active_duration(
+    dur: Dur,
+    repeat_count: Option<RepeatCount>,
+    repeat_dur: Option<f32>,
+) -> Option<f32> {
     let simple = match dur {
         Dur::Seconds(seconds) => Some(seconds),
         Dur::Indefinite => None,
@@ -552,7 +560,9 @@ pub(crate) fn parse_easing<'a, 'input: 'a>(
             None => values_count.saturating_sub(1),
         };
         match parse_key_splines(raw) {
-            Some(splines) if splines.len() == expected && splines_in_range(&splines) => Some(splines),
+            Some(splines) if splines.len() == expected && splines_in_range(&splines) => {
+                Some(splines)
+            }
             _ => {
                 log::warn!("Invalid animation timing: '{}'.", raw);
                 return None;
@@ -957,7 +967,9 @@ mod tests {
             let timing = timing_of(&svg, "a");
             assert!(timing.begins().is_empty());
         });
-        assert!(warnings.contains(&"Unsupported animation begin/end value: 'b.begin'.".to_string()));
+        assert!(
+            warnings.contains(&"Unsupported animation begin/end value: 'b.begin'.".to_string())
+        );
     }
 
     #[test]

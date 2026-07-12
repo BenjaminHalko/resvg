@@ -76,7 +76,10 @@ fn inline_animated_transform_shifts_bbox() {
     let t0 = nonzero_bbox(&render_at_pixmap(svg, 0.0)).expect("content at t=0");
     let mid = nonzero_bbox(&render_at_pixmap(svg, 2.0)).expect("content at t=mid");
     let shift = mid.0 as i32 - t0.0 as i32;
-    assert!((shift - 20).abs() <= 2, "expected ~+20px shift, got {shift}");
+    assert!(
+        (shift - 20).abs() <= 2,
+        "expected ~+20px shift, got {shift}"
+    );
 }
 
 #[test]
@@ -93,7 +96,10 @@ fn wrapper_transform_offsets_bbox() {
     let t0 = nonzero_bbox(&render_at_pixmap(svg, 0.0)).expect("content at t=0");
     let mid = nonzero_bbox(&render_at_pixmap(svg, 2.0)).expect("content at t=mid");
     let shift = mid.0 as i32 - t0.0 as i32;
-    assert!((shift - 20).abs() <= 1, "expected ~+20px offset, got {shift}");
+    assert!(
+        (shift - 20).abs() <= 1,
+        "expected ~+20px offset, got {shift}"
+    );
 }
 
 #[test]
@@ -110,7 +116,10 @@ fn animated_opacity_forces_isolation() {
     let mid = alpha_at(&render_at_pixmap(svg, 2.0), 30, 30);
     assert_eq!(a0, 255, "fully opaque at t=0");
     assert!(mid > 0 && mid < a0, "opacity 0.5 reduces alpha, got {mid}");
-    assert!((mid as i16 - 128).abs() <= 8, "expected ~128 alpha, got {mid}");
+    assert!(
+        (mid as i16 - 128).abs() <= 8,
+        "expected ~128 alpha, got {mid}"
+    );
 }
 
 #[test]
@@ -146,7 +155,10 @@ fn grow_from_zero_renders_interpolated_width() {
     );
     let mid = nonzero_bbox(&render_at_pixmap(svg, 2.0)).expect("content at t=mid");
     let width = mid.2 - mid.0 + 1;
-    assert!((width as i32 - 50).abs() <= 2, "expected ~50px width, got {width}");
+    assert!(
+        (width as i32 - 50).abs() <= 2,
+        "expected ~50px width, got {width}"
+    );
 }
 
 #[test]
@@ -198,7 +210,10 @@ fn fill_carrier_preserves_opacity_and_rule() {
     </svg>"#;
     let pixmap = render_at_pixmap(svg, 2.0);
     let ring = alpha_at(&pixmap, 15, 30);
-    assert!((ring as i16 - 128).abs() <= 12, "expected ~128 ring alpha, got {ring}");
+    assert!(
+        (ring as i16 - 128).abs() <= 12,
+        "expected ~128 ring alpha, got {ring}"
+    );
     let center = alpha_at(&pixmap, 30, 30);
     assert!(center < 20, "even-odd center must be a hole, got {center}");
 }
@@ -222,7 +237,10 @@ fn animated_stop_color_changes_hue() {
     let (r0, g0, _) = rgb_at(&render_at_pixmap(svg, 0.0), 2, 20);
     let (r1, g1, _) = rgb_at(&render_at_pixmap(svg, 4.0), 2, 20);
     assert!(r0 > 200 && g0 < 60, "red-dominant at t=0, got ({r0}, {g0})");
-    assert!(g1 > 200 && r1 < 60, "green-dominant at t=end, got ({r1}, {g1})");
+    assert!(
+        g1 > 200 && r1 < 60,
+        "green-dominant at t=end, got ({r1}, {g1})"
+    );
 }
 
 #[test]
@@ -245,12 +263,18 @@ fn crossing_stop_offset_is_clamped_not_sorted() {
     // At the frozen end the sampled offset is 0, clamped up to the predecessor's
     // 0.3, so the left edge is red (clamp), not blue (sort).
     let (lr, _, lb) = rgb_at(&render_at_pixmap(svg, 4.0), 2, 20);
-    assert!(lr > 150 && lb < 100, "clamped left edge stays red, got ({lr}, {lb})");
+    assert!(
+        lr > 150 && lb < 100,
+        "clamped left edge stays red, got ({lr}, {lb})"
+    );
     // The animation still moves the transition: a mid pixel that is purple at t=0
     // turns blue once the transition collapses onto 0.3.
     let (_, _, mb0) = rgb_at(&render_at_pixmap(svg, 0.0), 20, 20);
     let (_, _, mb1) = rgb_at(&render_at_pixmap(svg, 4.0), 20, 20);
-    assert!(mb1 > mb0 + 60, "mid pixel gets bluer as the stop crosses, {mb0} -> {mb1}");
+    assert!(
+        mb1 > mb0 + 60,
+        "mid pixel gets bluer as the stop crosses, {mb0} -> {mb1}"
+    );
 }
 
 #[test]
@@ -291,12 +315,21 @@ fn radial_zero_radius_falls_back_to_last_stop() {
     </svg>"#;
     // Plain render and t=0: effective r <= 0, so the last stop (blue) fills solid.
     let (sr, _, sb) = rgb_at(&render_pixmap(svg), 30, 30);
-    assert!(sb > 200 && sr < 60, "static render is last-stop blue, got ({sr}, {sb})");
+    assert!(
+        sb > 200 && sr < 60,
+        "static render is last-stop blue, got ({sr}, {sb})"
+    );
     let (zr, _, zb) = rgb_at(&render_at_pixmap(svg, 0.0), 30, 30);
-    assert!(zb > 200 && zr < 60, "t=0 is last-stop blue, got ({zr}, {zb})");
+    assert!(
+        zb > 200 && zr < 60,
+        "t=0 is last-stop blue, got ({zr}, {zb})"
+    );
     // Mid-animation the radius is positive: the center is the first stop (red).
     let (mr, _, mb) = rgb_at(&render_at_pixmap(svg, 2.0), 30, 30);
-    assert!(mr > 200 && mb < 60, "positive radius renders the gradient, got ({mr}, {mb})");
+    assert!(
+        mr > 200 && mb < 60,
+        "positive radius renders the gradient, got ({mr}, {mb})"
+    );
 
     // With fill=remove the animation stops contributing past its end, so the
     // radius returns to its 0 base and the solid last-stop color returns.
@@ -311,7 +344,10 @@ fn radial_zero_radius_falls_back_to_last_stop() {
         <rect width="60" height="60" fill="url(#g)"/>
     </svg>"#;
     let (rr, _, rb) = rgb_at(&render_at_pixmap(removed, 10.0), 30, 30);
-    assert!(rb > 200 && rr < 60, "fill=remove returns to last-stop blue, got ({rr}, {rb})");
+    assert!(
+        rb > 200 && rr < 60,
+        "fill=remove returns to last-stop blue, got ({rr}, {rb})"
+    );
 }
 
 /// A 10x10 solid green raster stand-in, embedded as an SVG data URI.
@@ -333,9 +369,16 @@ fn animated_root_view_box_pans_content() {
     );
     let t0 = nonzero_bbox(&render_at_pixmap(&svg, 0.0)).expect("content at t=0");
     let end = nonzero_bbox(&render_at_pixmap(&svg, 4.0)).expect("content at t=end");
-    assert!((t0.0 as i32 - 40).abs() <= 2, "left edge starts near x=40, got {}", t0.0);
+    assert!(
+        (t0.0 as i32 - 40).abs() <= 2,
+        "left edge starts near x=40, got {}",
+        t0.0
+    );
     let shift = end.0 as i32 - t0.0 as i32;
-    assert!((shift + 40).abs() <= 2, "view box pan shifts content ~-40px, got {shift}");
+    assert!(
+        (shift + 40).abs() <= 2,
+        "view box pan shifts content ~-40px, got {shift}"
+    );
 }
 
 #[test]
@@ -357,10 +400,20 @@ fn animated_slice_image_scales_and_reclips() {
     let bbox_mid = nonzero_bbox(&mid).expect("content at t=mid");
     let width0 = bbox0.2 - bbox0.0 + 1;
     let width_mid = bbox_mid.2 - bbox_mid.0 + 1;
-    assert!(width_mid > width0 + 10, "slice clip widens, {width0} -> {width_mid}");
+    assert!(
+        width_mid > width0 + 10,
+        "slice clip widens, {width0} -> {width_mid}"
+    );
     // A pixel outside the t=0 clip becomes covered once the slice widens.
-    assert_eq!(alpha_at(&t0, 45, 30), 0, "pixel outside the t=0 slice is empty");
-    assert!(alpha_at(&mid, 45, 30) > 200, "the widened slice covers that pixel");
+    assert_eq!(
+        alpha_at(&t0, 45, 30),
+        0,
+        "pixel outside the t=0 slice is empty"
+    );
+    assert!(
+        alpha_at(&mid, 45, 30) > 200,
+        "the widened slice covers that pixel"
+    );
     // The rescale moves the red|blue boundary, flipping a fixed interior pixel.
     let c0 = t0.pixel(25, 30).unwrap();
     let c_mid = mid.pixel(25, 30).unwrap();
@@ -383,10 +436,21 @@ fn partial_image_animation_keeps_static_dims() {
     </svg>"#
     );
     let bbox = nonzero_bbox(&render_at_pixmap(&svg, 2.0)).expect("content at t=mid");
-    assert!((bbox.0 as i32 - 10).abs() <= 2, "static x preserved, got {}", bbox.0);
-    assert!((bbox.1 as i32 - 10).abs() <= 2, "static y preserved, got {}", bbox.1);
+    assert!(
+        (bbox.0 as i32 - 10).abs() <= 2,
+        "static x preserved, got {}",
+        bbox.0
+    );
+    assert!(
+        (bbox.1 as i32 - 10).abs() <= 2,
+        "static y preserved, got {}",
+        bbox.1
+    );
     let height = bbox.3 - bbox.1 + 1;
-    assert!((height as i32 - 40).abs() <= 3, "static height preserved, got {height}");
+    assert!(
+        (height as i32 - 40).abs() <= 3,
+        "static height preserved, got {height}"
+    );
 }
 
 #[test]
@@ -449,7 +513,11 @@ fn animated_mask_content_shifts_coverage() {
     </svg>"#;
     let t0 = render_at_pixmap(svg, 0.0);
     let mid = render_at_pixmap(svg, 2.0);
-    assert_eq!(alpha_at(&t0, 30, 30), 0, "the right band is masked out at t=0");
+    assert_eq!(
+        alpha_at(&t0, 30, 30),
+        0,
+        "the right band is masked out at t=0"
+    );
     assert!(
         alpha_at(&mid, 30, 30) > 200,
         "the mask band translates to reveal the right region"
@@ -457,7 +525,10 @@ fn animated_mask_content_shifts_coverage() {
     let b0 = nonzero_bbox(&t0).expect("content at t=0");
     let mid_bbox = nonzero_bbox(&mid).expect("content at t=mid");
     let shift = mid_bbox.0 as i32 - b0.0 as i32;
-    assert!((shift - 20).abs() <= 2, "mask coverage shifts ~+20px, got {shift}");
+    assert!(
+        (shift - 20).abs() <= 2,
+        "mask coverage shifts ~+20px, got {shift}"
+    );
 }
 
 #[test]
@@ -477,7 +548,11 @@ fn animated_clip_path_content_shifts_coverage() {
     </svg>"#;
     let t0 = render_at_pixmap(svg, 0.0);
     let mid = render_at_pixmap(svg, 2.0);
-    assert_eq!(alpha_at(&t0, 30, 30), 0, "the right band is clipped out at t=0");
+    assert_eq!(
+        alpha_at(&t0, 30, 30),
+        0,
+        "the right band is clipped out at t=0"
+    );
     assert!(
         alpha_at(&mid, 30, 30) > 200,
         "the clip shape translates to reveal the right region"
@@ -485,7 +560,10 @@ fn animated_clip_path_content_shifts_coverage() {
     let b0 = nonzero_bbox(&t0).expect("content at t=0");
     let mid_bbox = nonzero_bbox(&mid).expect("content at t=mid");
     let shift = mid_bbox.0 as i32 - b0.0 as i32;
-    assert!((shift - 20).abs() <= 2, "clip coverage shifts ~+20px, got {shift}");
+    assert!(
+        (shift - 20).abs() <= 2,
+        "clip coverage shifts ~+20px, got {shift}"
+    );
 }
 
 #[test]
@@ -505,7 +583,11 @@ fn animated_pattern_content_shifts_coverage() {
     </svg>"#;
     let t0 = render_at_pixmap(svg, 0.0);
     let mid = render_at_pixmap(svg, 2.0);
-    assert_eq!(alpha_at(&t0, 30, 30), 0, "the pattern paints only the left band at t=0");
+    assert_eq!(
+        alpha_at(&t0, 30, 30),
+        0,
+        "the pattern paints only the left band at t=0"
+    );
     assert!(
         alpha_at(&mid, 30, 30) > 200,
         "the pattern content translates to paint the right region"
@@ -513,7 +595,10 @@ fn animated_pattern_content_shifts_coverage() {
     let b0 = nonzero_bbox(&t0).expect("content at t=0");
     let mid_bbox = nonzero_bbox(&mid).expect("content at t=mid");
     let shift = mid_bbox.0 as i32 - b0.0 as i32;
-    assert!((shift - 20).abs() <= 2, "pattern coverage shifts ~+20px, got {shift}");
+    assert!(
+        (shift - 20).abs() <= 2,
+        "pattern coverage shifts ~+20px, got {shift}"
+    );
 }
 
 #[test]

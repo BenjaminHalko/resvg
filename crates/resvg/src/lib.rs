@@ -94,7 +94,10 @@ pub fn render_at(
     };
 
     // An active root `viewBox` animation replaces the root transform.
-    let transform = match ctx.time.and_then(|t| render::root_view_box_transform(tree, t)) {
+    let transform = match ctx
+        .time
+        .and_then(|t| render::root_view_box_transform(tree, t))
+    {
         Some(view_box_ts) => transform.pre_concat(view_box_ts),
         None => transform,
     };

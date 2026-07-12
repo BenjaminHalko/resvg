@@ -27,7 +27,7 @@ use usvg::{
     Interval, LineCap, LineJoin, NodeAnimation, NonZeroRect, SmilFill, SmilTiming, Timing,
 };
 
-use super::interpolate::{interpolate_track, SampledValue};
+use super::interpolate::{SampledValue, interpolate_track};
 use super::timing::{css_progress, smil_progress};
 
 /// The sampled geometry of an animated `image` element.
@@ -149,7 +149,10 @@ fn smil_interval(timing: &SmilTiming, t: f32) -> Option<(f32, u32)> {
             None => interval.begin() <= t,
         };
         if active {
-            return Some((interval.begin(), active_iteration(interval.begin(), t, timing.dur())));
+            return Some((
+                interval.begin(),
+                active_iteration(interval.begin(), t, timing.dur()),
+            ));
         }
     }
     let interval = most_recent?;
@@ -198,12 +201,21 @@ fn fold(overrides: &mut SampledOverrides, image: &mut ImageState, contribution: 
         return;
     };
     let sampled = match animation.accumulate() {
-        Accumulate::Sum => {
-            accumulate(animation.kind(), animation.easing(), sampled, contribution.iteration)
-        }
+        Accumulate::Sum => accumulate(
+            animation.kind(),
+            animation.easing(),
+            sampled,
+            contribution.iteration,
+        ),
         Accumulate::None => sampled,
     };
-    apply(overrides, image, animation.kind(), sampled, animation.additive());
+    apply(
+        overrides,
+        image,
+        animation.kind(),
+        sampled,
+        animation.additive(),
+    );
 }
 
 /// Routes a sampled value into its override slot and folds by additivity.
@@ -215,7 +227,9 @@ fn apply(
     additive: Additive,
 ) {
     match sampled {
-        SampledValue::Transform(matrix) => fold_transform(&mut overrides.transform, matrix, additive),
+        SampledValue::Transform(matrix) => {
+            fold_transform(&mut overrides.transform, matrix, additive)
+        }
         SampledValue::Motion(matrix) => {
             // Motion supplements the transform sandwich by post-multiplication.
             let base = overrides.transform.unwrap_or_else(Transform::identity);
@@ -232,7 +246,9 @@ fn apply(
             AnimationKind::StopColor(_) => push_gradient(overrides, SampledValue::Color(color)),
             _ => fold_color(&mut overrides.fill, color, additive),
         },
-        SampledValue::StrokeWidth(value) => fold_scalar(&mut overrides.stroke_width, value, additive),
+        SampledValue::StrokeWidth(value) => {
+            fold_scalar(&mut overrides.stroke_width, value, additive)
+        }
         SampledValue::StrokeDashoffset(value) => {
             fold_scalar(&mut overrides.dashoffset, value, additive);
         }
@@ -680,7 +696,8 @@ mod tests {
         );
 
         let overrides = sample_overrides(&node(vec![base, rotate]), 0.5);
-        let expected = Transform::from_translate(30.0, 0.0).pre_concat(Transform::from_rotate(90.0));
+        let expected =
+            Transform::from_translate(30.0, 0.0).pre_concat(Transform::from_rotate(90.0));
         approx_transform(overrides.transform.unwrap(), expected);
     }
 
@@ -834,7 +851,8 @@ mod tests {
         );
 
         let overrides = sample_overrides(&node(vec![anim]), 0.5);
-        let expected = Transform::from_translate(50.0, 50.0).pre_concat(Transform::from_rotate(45.0));
+        let expected =
+            Transform::from_translate(50.0, 50.0).pre_concat(Transform::from_rotate(45.0));
         approx_transform(overrides.transform.unwrap(), expected);
     }
 

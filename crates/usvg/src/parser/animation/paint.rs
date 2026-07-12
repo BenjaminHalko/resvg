@@ -23,8 +23,8 @@ use crate::parser::paint_server::{
 use crate::parser::svgtree::{AId, EId, SvgNode};
 use crate::tree::animation::{GradientAnimation, SourceStop};
 use crate::{
-    BaseGradient, Color, IsValidLength, LinearGradient, NonEmptyString, Opacity, Paint, PositiveF32,
-    RadialGradient, Stop, StopOffset, Units,
+    BaseGradient, Color, IsValidLength, LinearGradient, NonEmptyString, Opacity, Paint,
+    PositiveF32, RadialGradient, Stop, StopOffset, Units,
 };
 
 /// Builds an animated gradient, bypassing the static stop conversion.
@@ -49,7 +49,9 @@ pub(crate) fn preserve_animated_gradient(
     }
 
     let animations = collect_node_animations(node, state, cache);
-    let stop_animated = source_stops.iter().any(|stop| !stop.animations().is_empty());
+    let stop_animated = source_stops
+        .iter()
+        .any(|stop| !stop.animations().is_empty());
     if animations.is_empty() && !stop_animated {
         return None;
     }
@@ -107,7 +109,13 @@ fn build_linear(
     LinearGradient {
         x1: resolve_number(node, AId::X1, units, state, Length::zero()),
         y1: resolve_number(node, AId::Y1, units, state, Length::zero()),
-        x2: resolve_number(node, AId::X2, units, state, Length::new(100.0, Unit::Percent)),
+        x2: resolve_number(
+            node,
+            AId::X2,
+            units,
+            state,
+            Length::new(100.0, Unit::Percent),
+        ),
         y2: resolve_number(node, AId::Y2, units, state, Length::zero()),
         base,
     }
@@ -124,8 +132,20 @@ fn build_radial(
     base: BaseGradient,
 ) -> RadialGradient {
     let r = resolve_number(node, AId::R, units, state, Length::new(50.0, Unit::Percent));
-    let cx = resolve_number(node, AId::Cx, units, state, Length::new(50.0, Unit::Percent));
-    let cy = resolve_number(node, AId::Cy, units, state, Length::new(50.0, Unit::Percent));
+    let cx = resolve_number(
+        node,
+        AId::Cx,
+        units,
+        state,
+        Length::new(50.0, Unit::Percent),
+    );
+    let cy = resolve_number(
+        node,
+        AId::Cy,
+        units,
+        state,
+        Length::new(50.0, Unit::Percent),
+    );
     RadialGradient {
         cx,
         cy,

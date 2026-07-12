@@ -1,8 +1,8 @@
 // Copyright 2026 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use svgtypes::Length;
 
@@ -59,7 +59,9 @@ pub(crate) fn renderable_animations(
 ) -> Vec<Arc<Animation>> {
     collect_node_animations(node, state, cache)
         .into_iter()
-        .filter(|animation| !is_wrapper_kind(animation.kind()) && !is_image_geometry_kind(animation.kind()))
+        .filter(|animation| {
+            !is_wrapper_kind(animation.kind()) && !is_image_geometry_kind(animation.kind())
+        })
         .collect()
 }
 
@@ -101,20 +103,24 @@ pub(crate) fn collect_view_box_animation(
 }
 
 pub(crate) fn has_display_or_visibility_animation(node: SvgNode, state: &converter::State) -> bool {
-    animation_nodes(node, state.all_animations).into_iter().any(|animation| {
-        matches!(
-            animation.attribute::<&str>(AId::AttributeName),
-            Some("display" | "visibility")
-        )
-    })
+    animation_nodes(node, state.all_animations)
+        .into_iter()
+        .any(|animation| {
+            matches!(
+                animation.attribute::<&str>(AId::AttributeName),
+                Some("display" | "visibility")
+            )
+        })
 }
 
 pub(crate) fn has_paint_animation(node: SvgNode, state: &converter::State, names: &[&str]) -> bool {
-    animation_nodes(node, state.all_animations).into_iter().any(|animation| {
-        animation
-            .attribute::<&str>(AId::AttributeName)
-            .is_some_and(|name| names.contains(&name))
-    })
+    animation_nodes(node, state.all_animations)
+        .into_iter()
+        .any(|animation| {
+            animation
+                .attribute::<&str>(AId::AttributeName)
+                .is_some_and(|name| names.contains(&name))
+        })
 }
 
 pub(crate) fn base_hidden(node: SvgNode) -> bool {
@@ -174,7 +180,8 @@ fn animation_nodes<'a, 'input: 'a>(
     let mut nodes = node
         .children()
         .filter(|child| {
-            child.tag_name().is_some_and(|tag| tag.is_animation()) && !child.has_attribute(AId::Href)
+            child.tag_name().is_some_and(|tag| tag.is_animation())
+                && !child.has_attribute(AId::Href)
         })
         .collect::<Vec<_>>();
     nodes.extend(all_animations.iter().filter_map(|(_, animation)| {
@@ -233,18 +240,39 @@ fn parse_animation(
                 parse_easing(node, count)?
             };
             let values = if is_shape_geometry(target, attribute_name) {
-                parse_geometry_animation(target, node, attribute_name, additive, accumulate, &easing, state)?
+                parse_geometry_animation(
+                    target,
+                    node,
+                    attribute_name,
+                    additive,
+                    accumulate,
+                    &easing,
+                    state,
+                )?
             } else {
                 let values = parse_smil_values(
                     attribute_name,
                     if is_set {
-                        node.attribute(AId::To).or_else(|| node.attribute(AId::Values))
+                        node.attribute(AId::To)
+                            .or_else(|| node.attribute(AId::Values))
                     } else {
                         node.attribute(AId::Values)
                     },
-                    if is_set { None } else { node.attribute(AId::From) },
-                    if is_set { None } else { node.attribute(AId::To) },
-                    if is_set { None } else { node.attribute(AId::By) },
+                    if is_set {
+                        None
+                    } else {
+                        node.attribute(AId::From)
+                    },
+                    if is_set {
+                        None
+                    } else {
+                        node.attribute(AId::To)
+                    },
+                    if is_set {
+                        None
+                    } else {
+                        node.attribute(AId::By)
+                    },
                     additive,
                     accumulate,
                     easing.calc_mode(),
@@ -308,8 +336,16 @@ fn parse_geometry_animation(
         let AnimationKind::GradientGeometry(track) = values.kind else {
             return None;
         };
-        let offsets = track.keyframes().iter().map(|keyframe| keyframe.offset()).collect();
-        let values = track.keyframes().iter().map(|keyframe| *keyframe.value()).collect();
+        let offsets = track
+            .keyframes()
+            .iter()
+            .map(|keyframe| keyframe.offset())
+            .collect();
+        let values = track
+            .keyframes()
+            .iter()
+            .map(|keyframe| *keyframe.value())
+            .collect();
         (values, offsets, None)
     };
     let key_timing_fns = vec![None; offsets.len()];
@@ -339,7 +375,11 @@ fn raw_geometry_values<'a, 'input: 'a>(
     name: &str,
 ) -> Option<Vec<&'a str>> {
     if let Some(values) = node.attribute::<&str>(AId::Values) {
-        let values = values.split(';').map(str::trim).filter(|value| !value.is_empty()).collect();
+        let values = values
+            .split(';')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .collect();
         return Some(values);
     }
     match (node.attribute(AId::From), node.attribute(AId::To)) {
@@ -375,22 +415,30 @@ fn base_value(node: SvgNode, name: &str, state: &converter::State) -> BaseValue 
             .and_then(|value| svgtypes::Color::from_str(value).ok())
             .map_or(BaseValue::None, BaseValue::Color),
         "stroke-width" => BaseValue::Number(node.resolve_length(AId::StrokeWidth, state, 1.0)),
-        "stroke-dashoffset" => BaseValue::Number(node.resolve_length(AId::StrokeDashoffset, state, 0.0)),
+        "stroke-dashoffset" => {
+            BaseValue::Number(node.resolve_length(AId::StrokeDashoffset, state, 0.0))
+        }
         "stroke-dasharray" => BaseValue::Numbers(Vec::new()),
         "stroke-miterlimit" => BaseValue::Miterlimit(StrokeMiterlimit::new(
             node.find_attribute(AId::StrokeMiterlimit).unwrap_or(4.0),
         )),
-        "stroke-linecap" => BaseValue::Linecap(node.find_attribute(AId::StrokeLinecap).unwrap_or_default()),
-        "stroke-linejoin" => BaseValue::Linejoin(node.find_attribute(AId::StrokeLinejoin).unwrap_or_default()),
+        "stroke-linecap" => {
+            BaseValue::Linecap(node.find_attribute(AId::StrokeLinecap).unwrap_or_default())
+        }
+        "stroke-linejoin" => {
+            BaseValue::Linejoin(node.find_attribute(AId::StrokeLinejoin).unwrap_or_default())
+        }
         "fill-rule" => BaseValue::FillRule(node.find_attribute(AId::FillRule).unwrap_or_default()),
         "display" => BaseValue::Boolean(node.attribute(AId::Display) != Some("none")),
-        "visibility" => BaseValue::Visibility(match node.find_attribute(AId::Visibility).unwrap_or_default() {
-            Visibility::Visible => AnimationVisibility::Visible,
-            Visibility::Hidden => AnimationVisibility::Hidden,
-            Visibility::Collapse => AnimationVisibility::Collapse,
-        }),
-        "x" | "y" | "width" | "height" | "cx" | "cy" | "r" | "rx" | "ry" | "x1" | "y1"
-        | "x2" | "y2" => AId::from_str(name)
+        "visibility" => BaseValue::Visibility(
+            match node.find_attribute(AId::Visibility).unwrap_or_default() {
+                Visibility::Visible => AnimationVisibility::Visible,
+                Visibility::Hidden => AnimationVisibility::Hidden,
+                Visibility::Collapse => AnimationVisibility::Collapse,
+            },
+        ),
+        "x" | "y" | "width" | "height" | "cx" | "cy" | "r" | "rx" | "ry" | "x1" | "y1" | "x2"
+        | "y2" => AId::from_str(name)
             .map(|attribute| node.convert_user_length(attribute, state, Length::zero()))
             .map_or(BaseValue::None, BaseValue::Number),
         _ => BaseValue::None,
@@ -425,7 +473,11 @@ fn map_target_kind(
                         "y" => vec![static_x, *keyframe.value()],
                         _ => vec![*keyframe.value(), 0.0],
                     };
-                    crate::Keyframe::new(keyframe.offset(), values, keyframe.timing_function().cloned())
+                    crate::Keyframe::new(
+                        keyframe.offset(),
+                        values,
+                        keyframe.timing_function().cloned(),
+                    )
                 })
                 .collect();
             return AnimationKind::Transform(TransformTrack::Smil {
@@ -469,7 +521,10 @@ fn value_count(node: SvgNode, is_set: bool) -> usize {
         return 1;
     }
     if let Some(values) = node.attribute::<&str>(AId::Values) {
-        return values.split(';').filter(|value| !value.trim().is_empty()).count();
+        return values
+            .split(';')
+            .filter(|value| !value.trim().is_empty())
+            .count();
     }
     if node.has_attribute(AId::To) || node.has_attribute(AId::By) {
         2
@@ -493,11 +548,31 @@ fn offsets(count: usize, key_times: Option<&[crate::NormalizedF32]>) -> Vec<crat
 fn is_shape_geometry(node: SvgNode, name: &str) -> bool {
     matches!(
         node.tag_name(),
-        Some(EId::Rect | EId::Circle | EId::Ellipse | EId::Line | EId::Polyline | EId::Polygon | EId::Path)
+        Some(
+            EId::Rect
+                | EId::Circle
+                | EId::Ellipse
+                | EId::Line
+                | EId::Polyline
+                | EId::Polygon
+                | EId::Path
+        )
     ) && matches!(
         name,
-        "x" | "y" | "width" | "height" | "rx" | "ry" | "cx" | "cy" | "r" | "x1" | "y1"
-            | "x2" | "y2" | "d" | "points"
+        "x" | "y"
+            | "width"
+            | "height"
+            | "rx"
+            | "ry"
+            | "cx"
+            | "cy"
+            | "r"
+            | "x1"
+            | "y1"
+            | "x2"
+            | "y2"
+            | "d"
+            | "points"
     )
 }
 

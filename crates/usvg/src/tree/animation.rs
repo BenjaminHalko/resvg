@@ -19,8 +19,8 @@ use std::sync::Arc;
 use svgtypes::AspectRatio;
 
 use crate::{
-    FillRule, LineCap, LineJoin, NonZeroRect, NormalizedF32, Opacity, Paint, Size, StrokeMiterlimit,
-    Transform,
+    FillRule, LineCap, LineJoin, NonZeroRect, NormalizedF32, Opacity, Paint, Size,
+    StrokeMiterlimit, Transform,
 };
 
 /// The source of an animation — SMIL or CSS.

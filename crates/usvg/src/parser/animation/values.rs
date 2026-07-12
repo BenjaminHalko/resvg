@@ -316,7 +316,9 @@ pub(crate) fn parse_smil_values(
                 |a, b| {
                     let len = a.len().max(b.len());
                     (0..len)
-                        .map(|i| a.get(i).copied().unwrap_or(0.0) + b.get(i).copied().unwrap_or(0.0))
+                        .map(|i| {
+                            a.get(i).copied().unwrap_or(0.0) + b.get(i).copied().unwrap_or(0.0)
+                        })
                         .collect()
                 },
             )?;
@@ -639,7 +641,9 @@ where
                 Some((two_keyframes(zero, b), Additive::Sum))
             }
         }
-        (Some(f), None, None) => Some((vec![Keyframe::new(NormalizedF32::ZERO, f, None)], additive)),
+        (Some(f), None, None) => {
+            Some((vec![Keyframe::new(NormalizedF32::ZERO, f, None)], additive))
+        }
         _ => None,
     }
 }
@@ -1233,7 +1237,10 @@ mod tests {
                 .get(),
             0.5
         );
-        assert_eq!(BaseValue::Color(color("red")).color().unwrap(), color("red"));
+        assert_eq!(
+            BaseValue::Color(color("red")).color().unwrap(),
+            color("red")
+        );
         assert_eq!(BaseValue::Number(3.0).number().unwrap(), 3.0);
         assert_eq!(
             BaseValue::Numbers(vec![1.0, 2.0]).numbers().unwrap(),
