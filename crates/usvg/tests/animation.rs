@@ -5,7 +5,10 @@
 
 use std::sync::{Mutex, Once, OnceLock};
 
-use usvg::{Additive, AnimationKind, CalcMode, Dur, Node, Options, SmilFill, Timing, Tree};
+use usvg::{
+    Additive, AnimationKind, AnimationSource, CalcMode, Direction, Dur, Node, Options, SmilFill,
+    StepPosition, Timing, TimingFunction, TransformBox, TransformOriginValue, TransformTrack, Tree,
+};
 
 const NS: &str = "http://www.w3.org/2000/svg";
 const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JTxAAAAAASUVORK5CYII=";
@@ -433,4 +436,176 @@ fn freeze_and_remove_fill_modes_are_distinguished() {
         panic!("expected SMIL timing");
     };
     assert!(matches!(remove_timing.fill(), SmilFill::Remove));
+}
+
+#[test]
+fn css_steps_timing_function_is_parsed() {
+    let tree = parse(
+        "<style>@keyframes move { from { transform: translate(0px,0px); } to { transform: translate(4px,0px); } } #box { animation: move 4s steps(4, jump-end); }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    assert!(matches!(animation.source(), AnimationSource::Css));
+    let Timing::Css(timing) = animation.timing() else {
+        panic!("expected CSS timing");
+    };
+    assert!(matches!(
+        *timing.timing_function(),
+        TimingFunction::Steps(4, StepPosition::JumpEnd)
+    ));
+}
+
+#[test]
+fn css_negative_delay_is_preserved() {
+    let tree = parse(
+        "<style>@keyframes move { from { transform: translate(0px,0px); } to { transform: translate(4px,0px); } } #box { animation: move 4s linear -1s; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let Timing::Css(timing) = animation.timing() else {
+        panic!("expected CSS timing");
+    };
+    assert_eq!(timing.delay(), -1.0);
+    assert_eq!(timing.duration(), 4.0);
+}
+
+#[test]
+fn css_alternate_reverse_direction_is_parsed() {
+    let tree = parse(
+        "<style>@keyframes fade { from { opacity: 1; } to { opacity: 0; } } #box { animation: fade 4s linear alternate-reverse; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let Timing::Css(timing) = animation.timing() else {
+        panic!("expected CSS timing");
+    };
+    assert!(matches!(timing.direction(), Direction::AlternateReverse));
+}
+
+#[test]
+fn css_two_animations_attach_to_one_node() {
+    let tree = parse(
+        "<style>@keyframes move { from { transform: translate(0px,0px); } to { transform: translate(4px,4px); } } @keyframes fade { from { opacity: 1; } to { opacity: 0.2; } } #box { animation: move 4s linear, fade 4s linear; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let wrapper = group(&tree.root().children()[0]);
+    assert_eq!(wrapper.animations().len(), 2);
+    assert!(matches!(wrapper.animations()[0].kind(), AnimationKind::Transform(_)));
+    assert!(matches!(wrapper.animations()[1].kind(), AnimationKind::Opacity(_)));
+}
+
+#[test]
+fn css_percent_keyframe_offset_is_placed() {
+    let tree = parse(
+        "<style>@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } } #box { animation: pulse 4s linear; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Opacity(track) = animation.kind() else {
+        panic!("expected an opacity track");
+    };
+    assert_eq!(track.keyframes().len(), 3);
+    assert_eq!(track.keyframes()[1].offset().get(), 0.5);
+    assert_eq!(track.keyframes()[1].value().get(), 0.5);
+}
+
+#[test]
+fn css_transform_origin_percent_values_are_captured() {
+    let tree = parse(
+        "<style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(90deg); } } #box { transform-origin: 25% 75%; animation: spin 4s linear; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Transform(TransformTrack::Css { origin, .. }) = animation.kind() else {
+        panic!("expected a CSS transform track");
+    };
+    assert!(matches!(origin.x(), TransformOriginValue::Percent(value) if *value == 25.0));
+    assert!(matches!(origin.y(), TransformOriginValue::Percent(value) if *value == 75.0));
+}
+
+#[test]
+fn css_transform_box_fill_box_is_captured() {
+    let tree = parse(
+        "<style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(90deg); } } #box { transform-box: fill-box; animation: spin 4s linear; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Transform(TransformTrack::Css { box_, .. }) = animation.kind() else {
+        panic!("expected a CSS transform track");
+    };
+    assert!(matches!(box_, TransformBox::FillBox));
+}
+
+#[test]
+fn css_stroke_width_is_a_renderable_track() {
+    let tree = parse(
+        "<style>@keyframes grow { from { stroke-width: 1; } to { stroke-width: 8; } } #line { animation: grow 4s linear; }</style><path id='line' d='M0 0 L4 4' stroke='black' stroke-width='1'/>",
+    );
+    let animation = &path(&tree.root().children()[0]).animation().unwrap().animations()[0];
+    let AnimationKind::StrokeWidth(track) = animation.kind() else {
+        panic!("expected a stroke-width track");
+    };
+    assert_eq!(track.keyframes().len(), 2);
+    assert_eq!(*track.keyframes()[0].value(), 1.0);
+    assert_eq!(*track.keyframes()[1].value(), 8.0);
+}
+
+#[test]
+fn css_fill_animation_is_suppressed_by_important() {
+    let tree = parse(
+        "<style>@keyframes recolor { from { fill: red; } to { fill: blue; } } #box { fill: green !important; animation: recolor 4s linear; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &path(&tree.root().children()[0]).animation().unwrap().animations()[0];
+    assert!(matches!(animation.kind(), AnimationKind::Fill(_)));
+    assert!(animation.suppressed_by_important());
+}
+
+#[test]
+fn css_stop_color_and_stop_opacity_attach_to_a_stop() {
+    let tree = parse(
+        "<style>@keyframes shift { from { stop-color: #ff0000; stop-opacity: 1; } to { stop-color: #0000ff; stop-opacity: 0.2; } } #s0 { animation: shift 4s linear; }</style><defs><linearGradient id='g'><stop id='s0' offset='0' stop-color='red' stop-opacity='1'/><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>",
+    );
+    let gradient = &tree.linear_gradients()[0];
+    let stop = &gradient.animation().unwrap().source_stops()[0];
+    assert_eq!(stop.animations().len(), 2);
+    assert!(matches!(stop.animations()[0].kind(), AnimationKind::StopColor(_)));
+    assert!(matches!(stop.animations()[1].kind(), AnimationKind::StopOpacity(_)));
+}
+
+#[test]
+fn css_unknown_keyframes_name_warns() {
+    let _guard = WARN_GUARD.lock().unwrap();
+    init_capture();
+    WARNINGS.get().unwrap().lock().unwrap().clear();
+    let _tree = parse("<style>#box { animation: missing 4s linear; }</style><rect id='box' width='4' height='4'/>");
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Unknown keyframes name: 'missing'."));
+}
+
+#[test]
+fn css_unsupported_property_warns() {
+    let _guard = WARN_GUARD.lock().unwrap();
+    init_capture();
+    WARNINGS.get().unwrap().lock().unwrap().clear();
+    let _tree = parse("<style>@keyframes shift { from { color: red; } to { color: blue; } } #box { animation: shift 4s linear; }</style><rect id='box' width='4' height='4'/>");
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Unsupported CSS property in keyframes: 'color'."));
+}
+
+#[test]
+fn css_variables_are_not_supported_warns() {
+    let _guard = WARN_GUARD.lock().unwrap();
+    init_capture();
+    WARNINGS.get().unwrap().lock().unwrap().clear();
+    let _tree = parse("<style>@keyframes shift { from { fill: var(--a); } to { fill: var(--b); } } #box { animation: shift 4s linear; }</style><rect id='box' width='4' height='4'/>");
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "CSS variables are not supported."));
 }

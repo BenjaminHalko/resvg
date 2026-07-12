@@ -73,6 +73,13 @@ impl<'input> Document<'input> {
             doc: self,
         }
     }
+
+    /// Returns the document's `@keyframes` rules.
+    #[cfg(feature = "animation")]
+    #[inline]
+    pub(crate) fn keyframes(&self) -> &[crate::parser::animation::css::KeyframesRule] {
+        &self.keyframes
+    }
 }
 
 impl std::fmt::Debug for Document<'_> {

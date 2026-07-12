@@ -1,10 +1,24 @@
 // Copyright 2026 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Extraction of `@keyframes` rules from CSS text.
+//! CSS `@keyframes` extraction and conversion to the typed animation model.
 //!
 //! `simplecss` only understands selector-based rules, so `@keyframes` blocks are
-//! pulled out here before the remaining text is handed to it.
+//! pulled out here before the remaining text is handed to it. The parsed rules
+//! are later matched against each element's `animation-*` properties and
+//! converted into typed animations.
+
+use std::str::FromStr;
+use std::sync::Arc;
+
+use crate::parser::svgtree::{AId, Document, EId, SvgNode};
+use crate::tree::animation::{
+    Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, CssFillMode,
+    CssTiming, Direction, Easing, Iterations, Keyframe, PlayState, StepPosition, Timing,
+    TimingFunction, Track, TransformBox, TransformFunction, TransformOrigin, TransformOriginValue,
+    TransformTrack,
+};
+use crate::{NormalizedF32, Opacity};
 
 /// A parsed `@keyframes` rule.
 #[derive(Debug, Clone, PartialEq)]
@@ -421,6 +435,571 @@ fn matches_keyword(bytes: &[u8], start: usize, keyword: &[u8]) -> bool {
 
 fn is_ident_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
+}
+
+/// Builds the CSS animations attached to `node` via its `animation-name`.
+///
+/// Each `animation-name` is matched against the document's `@keyframes` rules
+/// and expanded into one [`Animation`] per animated CSS property. Unsupported
+/// properties, unknown keyframes names and CSS variables are dropped with a
+/// warning.
+///
+/// A rule that omits the `0%`/`100%` keyframes keeps only its explicit
+/// keyframes; the sampler supplies the underlying value at the missing edges.
+pub(crate) fn build_css_animations<'a, 'input>(
+    node: SvgNode<'a, 'input>,
+    doc: &'a Document<'input>,
+) -> Vec<Arc<Animation>> {
+    let Some(names) = node.attribute::<&str>(AId::AnimationName) else {
+        return Vec::new();
+    };
+
+    let names = split_list(names);
+    let durations = longhand_list(node, AId::AnimationDuration);
+    let delays = longhand_list(node, AId::AnimationDelay);
+    let iteration_counts = longhand_list(node, AId::AnimationIterationCount);
+    let directions = longhand_list(node, AId::AnimationDirection);
+    let fill_modes = longhand_list(node, AId::AnimationFillMode);
+    let timing_functions = longhand_list(node, AId::AnimationTimingFunction);
+    let play_states = longhand_list(node, AId::AnimationPlayState);
+
+    let is_stop = node.tag_name() == Some(EId::Stop);
+    let origin = read_transform_origin(node);
+    let box_ = read_transform_box(node);
+
+    let mut animations = Vec::new();
+    for (index, name) in names.iter().enumerate() {
+        let name = name.trim();
+        if name.is_empty() || name.eq_ignore_ascii_case("none") {
+            continue;
+        }
+
+        let Some(rule) = doc.keyframes().iter().find(|rule| rule.name.as_str() == name) else {
+            log::warn!("Unknown keyframes name: '{}'.", name);
+            continue;
+        };
+
+        let timing = CssTiming::new(
+            parse_time(cycle(&durations, index).unwrap_or("0s")).unwrap_or(0.0),
+            parse_time(cycle(&delays, index).unwrap_or("0s")).unwrap_or(0.0),
+            parse_iterations(cycle(&iteration_counts, index).unwrap_or("1")),
+            parse_direction(cycle(&directions, index).unwrap_or("normal")),
+            parse_fill_mode(cycle(&fill_modes, index).unwrap_or("none")),
+            parse_timing_function(cycle(&timing_functions, index).unwrap_or("ease"))
+                .unwrap_or(TimingFunction::Linear),
+            parse_play_state(cycle(&play_states, index).unwrap_or("running")),
+        );
+
+        for property in animated_properties(rule) {
+            if let Some(animation) =
+                build_property_animation(node, rule, &property, is_stop, timing, origin, box_)
+            {
+                animations.push(animation);
+            }
+        }
+    }
+
+    animations
+}
+
+/// The CSS properties whose `@keyframes` values this crate converts.
+enum CssProperty {
+    Transform,
+    Opacity,
+    Fill,
+    Stroke,
+    StrokeWidth,
+    StrokeDashoffset,
+    StopColor,
+    StopOpacity,
+}
+
+/// Builds a single property animation from one `@keyframes` rule.
+fn build_property_animation(
+    node: SvgNode,
+    rule: &KeyframesRule,
+    property: &str,
+    is_stop: bool,
+    timing: CssTiming,
+    origin: TransformOrigin,
+    box_: TransformBox,
+) -> Option<Arc<Animation>> {
+    let property = property.trim();
+    if property.starts_with("--") {
+        log::warn!("CSS variables are not supported.");
+        return None;
+    }
+
+    let Some(css_property) = classify_property(property, is_stop) else {
+        log::warn!("Unsupported CSS property in keyframes: '{}'.", property);
+        return None;
+    };
+
+    let entries = property_entries(rule, property);
+    if entries.iter().any(|(_, value, _)| value.contains("var(")) {
+        log::warn!("CSS variables are not supported.");
+        return None;
+    }
+
+    let kind = match css_property {
+        CssProperty::Transform => {
+            let keyframes = typed_keyframes(&entries, parse_transform_functions);
+            if keyframes.is_empty() {
+                return None;
+            }
+            AnimationKind::Transform(TransformTrack::Css {
+                keyframes,
+                origin,
+                box_,
+            })
+        }
+        CssProperty::Opacity => AnimationKind::Opacity(build_track(&entries, parse_css_opacity)?),
+        CssProperty::Fill => AnimationKind::Fill(build_track(&entries, parse_css_color)?),
+        CssProperty::Stroke => AnimationKind::Stroke(build_track(&entries, parse_css_color)?),
+        CssProperty::StrokeWidth => {
+            AnimationKind::StrokeWidth(build_track(&entries, parse_css_number)?)
+        }
+        CssProperty::StrokeDashoffset => {
+            AnimationKind::StrokeDashoffset(build_track(&entries, parse_css_number)?)
+        }
+        CssProperty::StopColor => AnimationKind::StopColor(build_track(&entries, parse_css_color)?),
+        CssProperty::StopOpacity => {
+            AnimationKind::StopOpacity(build_track(&entries, parse_css_opacity)?)
+        }
+    };
+
+    Some(Arc::new(Animation::new(
+        kind,
+        Timing::Css(timing),
+        Easing::new(CalcMode::Linear, None, None),
+        Additive::Replace,
+        Accumulate::None,
+        AnimationSource::Css,
+        property_suppressed_by_important(node, property),
+    )))
+}
+
+/// Classifies a CSS property name against the supported set.
+///
+/// `stop-color`/`stop-opacity` are only admitted on `<stop>` targets.
+fn classify_property(property: &str, is_stop: bool) -> Option<CssProperty> {
+    if property.eq_ignore_ascii_case("transform") {
+        Some(CssProperty::Transform)
+    } else if property.eq_ignore_ascii_case("opacity") {
+        Some(CssProperty::Opacity)
+    } else if property.eq_ignore_ascii_case("fill") {
+        Some(CssProperty::Fill)
+    } else if property.eq_ignore_ascii_case("stroke") {
+        Some(CssProperty::Stroke)
+    } else if property.eq_ignore_ascii_case("stroke-width") {
+        Some(CssProperty::StrokeWidth)
+    } else if property.eq_ignore_ascii_case("stroke-dashoffset") {
+        Some(CssProperty::StrokeDashoffset)
+    } else if is_stop && property.eq_ignore_ascii_case("stop-color") {
+        Some(CssProperty::StopColor)
+    } else if is_stop && property.eq_ignore_ascii_case("stop-opacity") {
+        Some(CssProperty::StopOpacity)
+    } else {
+        None
+    }
+}
+
+/// Collects the distinct property names animated by a rule, in first-seen order.
+fn animated_properties(rule: &KeyframesRule) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for keyframe in &rule.keyframes {
+        for (property, _) in &keyframe.declarations {
+            let property = property.trim();
+            if !names.iter().any(|existing| existing.eq_ignore_ascii_case(property)) {
+                names.push(property.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// Gathers a single property's `(offset, value, timing-function)` entries,
+/// sorted by offset.
+fn property_entries<'r>(
+    rule: &'r KeyframesRule,
+    property: &str,
+) -> Vec<(f32, &'r str, Option<&'r str>)> {
+    let mut entries = Vec::new();
+    for keyframe in &rule.keyframes {
+        let Some((_, value)) = keyframe
+            .declarations
+            .iter()
+            .find(|(name, _)| name.trim().eq_ignore_ascii_case(property))
+        else {
+            continue;
+        };
+        for &offset in &keyframe.offsets {
+            entries.push((offset, value.as_str(), keyframe.timing_function.as_deref()));
+        }
+    }
+    entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+    entries
+}
+
+/// Builds a typed track, returning `None` when no keyframe value parses.
+fn build_track<T: Clone>(
+    entries: &[(f32, &str, Option<&str>)],
+    parse: impl Fn(&str) -> Option<T>,
+) -> Option<Track<T>> {
+    let keyframes = typed_keyframes(entries, parse);
+    (!keyframes.is_empty()).then(|| Track::new(keyframes))
+}
+
+/// Parses each entry's value into a typed keyframe, dropping unparsable ones.
+fn typed_keyframes<T: Clone>(
+    entries: &[(f32, &str, Option<&str>)],
+    parse: impl Fn(&str) -> Option<T>,
+) -> Vec<Keyframe<T>> {
+    entries
+        .iter()
+        .copied()
+        .filter_map(|(offset, value, timing)| {
+            Some(Keyframe::new(
+                NormalizedF32::new_clamped(offset),
+                parse(value.trim())?,
+                timing.and_then(parse_timing_function),
+            ))
+        })
+        .collect()
+}
+
+/// Returns whether a winning `!important` static declaration suppresses the
+/// property's animation.
+fn property_suppressed_by_important(node: SvgNode, property: &str) -> bool {
+    AId::from_str(property).is_some_and(|aid| {
+        node.attributes()
+            .iter()
+            .find(|item| item.name == aid)
+            .is_some_and(|item| item.important)
+    })
+}
+
+fn read_transform_origin(node: SvgNode) -> TransformOrigin {
+    match node.try_attribute::<svgtypes::TransformOrigin>(AId::TransformOrigin) {
+        Some(origin) => {
+            TransformOrigin::new(origin_component(origin.x_offset), origin_component(origin.y_offset))
+        }
+        None => TransformOrigin::new(
+            TransformOriginValue::Percent(50.0),
+            TransformOriginValue::Percent(50.0),
+        ),
+    }
+}
+
+fn origin_component(length: svgtypes::Length) -> TransformOriginValue {
+    if length.unit == svgtypes::LengthUnit::Percent {
+        TransformOriginValue::Percent(length.number as f32)
+    } else {
+        TransformOriginValue::Length(length.number as f32)
+    }
+}
+
+fn read_transform_box(node: SvgNode) -> TransformBox {
+    match node.try_attribute::<&str>(AId::TransformBox).map(str::trim) {
+        Some("content-box") => TransformBox::ContentBox,
+        Some("border-box") => TransformBox::BorderBox,
+        Some("fill-box") => TransformBox::FillBox,
+        Some("stroke-box") => TransformBox::StrokeBox,
+        _ => TransformBox::ViewBox,
+    }
+}
+
+fn split_list(value: &str) -> Vec<&str> {
+    // A single value such as `steps(4, jump-end)` may carry its own commas, so
+    // the list is split at the top level only.
+    split_top_level(value, b',').into_iter().map(str::trim).collect()
+}
+
+fn longhand_list<'a>(node: SvgNode<'a, '_>, aid: AId) -> Vec<&'a str> {
+    node.attribute::<&str>(aid).map(split_list).unwrap_or_default()
+}
+
+/// Reads the `index`th list entry, cycling as CSS does when a longhand list is
+/// shorter than the `animation-name` list.
+fn cycle<'a>(list: &[&'a str], index: usize) -> Option<&'a str> {
+    if list.is_empty() {
+        None
+    } else {
+        Some(list[index % list.len()])
+    }
+}
+
+fn parse_time(value: &str) -> Option<f32> {
+    let value = value.trim();
+    if let Some(number) = strip_suffix_ci(value, "ms") {
+        return parse_finite(number).map(|seconds| seconds / 1000.0);
+    }
+    if let Some(number) = strip_suffix_ci(value, "s") {
+        return parse_finite(number);
+    }
+    parse_finite(value)
+}
+
+fn parse_iterations(value: &str) -> Iterations {
+    if value.trim().eq_ignore_ascii_case("infinite") {
+        return Iterations::Infinite;
+    }
+    match parse_finite(value) {
+        Some(count) if count >= 0.0 => Iterations::Count(count),
+        _ => Iterations::Count(1.0),
+    }
+}
+
+fn parse_direction(value: &str) -> Direction {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("reverse") {
+        Direction::Reverse
+    } else if value.eq_ignore_ascii_case("alternate") {
+        Direction::Alternate
+    } else if value.eq_ignore_ascii_case("alternate-reverse") {
+        Direction::AlternateReverse
+    } else {
+        Direction::Normal
+    }
+}
+
+fn parse_fill_mode(value: &str) -> CssFillMode {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("forwards") {
+        CssFillMode::Forwards
+    } else if value.eq_ignore_ascii_case("backwards") {
+        CssFillMode::Backwards
+    } else if value.eq_ignore_ascii_case("both") {
+        CssFillMode::Both
+    } else {
+        CssFillMode::None
+    }
+}
+
+fn parse_play_state(value: &str) -> PlayState {
+    if value.trim().eq_ignore_ascii_case("paused") {
+        PlayState::Paused
+    } else {
+        PlayState::Running
+    }
+}
+
+fn parse_timing_function(value: &str) -> Option<TimingFunction> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("linear") {
+        return Some(TimingFunction::Linear);
+    }
+    if value.eq_ignore_ascii_case("ease") {
+        return Some(TimingFunction::CubicBezier(0.25, 0.1, 0.25, 1.0));
+    }
+    if value.eq_ignore_ascii_case("ease-in") {
+        return Some(TimingFunction::CubicBezier(0.42, 0.0, 1.0, 1.0));
+    }
+    if value.eq_ignore_ascii_case("ease-out") {
+        return Some(TimingFunction::CubicBezier(0.0, 0.0, 0.58, 1.0));
+    }
+    if value.eq_ignore_ascii_case("ease-in-out") {
+        return Some(TimingFunction::CubicBezier(0.42, 0.0, 0.58, 1.0));
+    }
+    if value.eq_ignore_ascii_case("step-start") {
+        return Some(TimingFunction::Steps(1, StepPosition::JumpStart));
+    }
+    if value.eq_ignore_ascii_case("step-end") {
+        return Some(TimingFunction::Steps(1, StepPosition::JumpEnd));
+    }
+    if let Some(arguments) = function_arguments(value, "steps") {
+        return parse_steps(arguments);
+    }
+    if let Some(arguments) = function_arguments(value, "cubic-bezier") {
+        return parse_cubic_bezier(arguments);
+    }
+    None
+}
+
+/// Returns the argument list of a `name(...)` functional value.
+fn function_arguments<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    let inner = value.strip_suffix(')')?;
+    let open = inner.find('(')?;
+    inner[..open]
+        .trim()
+        .eq_ignore_ascii_case(name)
+        .then(|| &inner[open + 1..])
+}
+
+fn parse_steps(arguments: &str) -> Option<TimingFunction> {
+    let mut parts = arguments.split(',');
+    let count: u32 = parts.next()?.trim().parse().ok()?;
+    if count == 0 {
+        return None;
+    }
+    let position = match parts.next() {
+        Some(keyword) => parse_step_position(keyword.trim())?,
+        None => StepPosition::JumpEnd,
+    };
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(TimingFunction::Steps(count, position))
+}
+
+fn parse_step_position(keyword: &str) -> Option<StepPosition> {
+    match keyword {
+        "jump-start" | "start" => Some(StepPosition::JumpStart),
+        "jump-end" | "end" => Some(StepPosition::JumpEnd),
+        "jump-none" => Some(StepPosition::JumpNone),
+        "jump-both" => Some(StepPosition::JumpBoth),
+        _ => None,
+    }
+}
+
+fn parse_cubic_bezier(arguments: &str) -> Option<TimingFunction> {
+    let mut values = [0.0f32; 4];
+    let mut count = 0;
+    for part in arguments.split(',') {
+        *values.get_mut(count)? = parse_finite(part.trim())?;
+        count += 1;
+    }
+    (count == 4).then(|| TimingFunction::CubicBezier(values[0], values[1], values[2], values[3]))
+}
+
+fn parse_css_opacity(value: &str) -> Option<Opacity> {
+    let length = svgtypes::Length::from_str(value).ok()?;
+    match length.unit {
+        svgtypes::LengthUnit::Percent => Some(Opacity::new_clamped(length.number as f32 / 100.0)),
+        svgtypes::LengthUnit::None => Some(Opacity::new_clamped(length.number as f32)),
+        _ => None,
+    }
+}
+
+fn parse_css_color(value: &str) -> Option<svgtypes::Color> {
+    svgtypes::Color::from_str(value).ok()
+}
+
+fn parse_css_number(value: &str) -> Option<f32> {
+    let length = svgtypes::Length::from_str(value).ok()?;
+    length.number.is_finite().then_some(length.number as f32)
+}
+
+/// Parses a CSS `transform` value into a list of transform functions.
+fn parse_transform_functions(value: &str) -> Option<Vec<TransformFunction>> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+
+    let mut functions = Vec::new();
+    let mut rest = value;
+    while !rest.is_empty() {
+        let open = rest.find('(')?;
+        let name = rest[..open].trim();
+        let after = &rest[open + 1..];
+        let close = after.find(')')?;
+        functions.push(parse_transform_function(name, &after[..close])?);
+        rest = after[close + 1..].trim_start();
+    }
+
+    (!functions.is_empty()).then_some(functions)
+}
+
+fn parse_transform_function(name: &str, arguments: &str) -> Option<TransformFunction> {
+    let arguments: Vec<&str> = arguments
+        .split(',')
+        .map(str::trim)
+        .filter(|argument| !argument.is_empty())
+        .collect();
+
+    let function = if name.eq_ignore_ascii_case("matrix") {
+        if arguments.len() != 6 {
+            return None;
+        }
+        let mut values = [0.0f32; 6];
+        for (slot, argument) in values.iter_mut().zip(arguments.iter().copied()) {
+            *slot = parse_finite(argument)?;
+        }
+        TransformFunction::Matrix(values[0], values[1], values[2], values[3], values[4], values[5])
+    } else if name.eq_ignore_ascii_case("translate") {
+        let tx = parse_length(arguments.first()?)?;
+        let ty = match arguments.get(1) {
+            Some(value) => parse_length(value)?,
+            None => 0.0,
+        };
+        (arguments.len() <= 2).then_some(TransformFunction::Translate(tx, ty))?
+    } else if name.eq_ignore_ascii_case("translatex") {
+        TransformFunction::TranslateX(parse_length(single(&arguments)?)?)
+    } else if name.eq_ignore_ascii_case("translatey") {
+        TransformFunction::TranslateY(parse_length(single(&arguments)?)?)
+    } else if name.eq_ignore_ascii_case("scale") {
+        let sx = parse_finite(arguments.first()?)?;
+        let sy = match arguments.get(1) {
+            Some(value) => parse_finite(value)?,
+            None => sx,
+        };
+        (arguments.len() <= 2).then_some(TransformFunction::Scale(sx, sy))?
+    } else if name.eq_ignore_ascii_case("scalex") {
+        TransformFunction::ScaleX(parse_finite(single(&arguments)?)?)
+    } else if name.eq_ignore_ascii_case("scaley") {
+        TransformFunction::ScaleY(parse_finite(single(&arguments)?)?)
+    } else if name.eq_ignore_ascii_case("rotate") {
+        TransformFunction::Rotate(parse_angle(single(&arguments)?)?)
+    } else if name.eq_ignore_ascii_case("skewx") {
+        TransformFunction::SkewX(parse_angle(single(&arguments)?)?)
+    } else if name.eq_ignore_ascii_case("skewy") {
+        TransformFunction::SkewY(parse_angle(single(&arguments)?)?)
+    } else {
+        return None;
+    };
+
+    Some(function)
+}
+
+fn single<'a>(arguments: &[&'a str]) -> Option<&'a str> {
+    match arguments {
+        [argument] => Some(*argument),
+        _ => None,
+    }
+}
+
+fn parse_finite(value: &str) -> Option<f32> {
+    let number: f32 = value.trim().parse().ok()?;
+    number.is_finite().then_some(number)
+}
+
+/// Parses a CSS `<length>` used by transforms, accepting only user-unit values.
+fn parse_length(value: &str) -> Option<f32> {
+    let length = svgtypes::Length::from_str(value).ok()?;
+    match length.unit {
+        svgtypes::LengthUnit::None | svgtypes::LengthUnit::Px => {
+            length.number.is_finite().then_some(length.number as f32)
+        }
+        _ => None,
+    }
+}
+
+/// Parses a CSS `<angle>` into degrees.
+fn parse_angle(value: &str) -> Option<f32> {
+    let value = value.trim();
+    if let Some(number) = strip_suffix_ci(value, "deg") {
+        return parse_finite(number);
+    }
+    if let Some(number) = strip_suffix_ci(value, "grad") {
+        return parse_finite(number).map(|gradians| gradians * 0.9);
+    }
+    if let Some(number) = strip_suffix_ci(value, "rad") {
+        return parse_finite(number).map(f32::to_degrees);
+    }
+    if let Some(number) = strip_suffix_ci(value, "turn") {
+        return parse_finite(number).map(|turns| turns * 360.0);
+    }
+    parse_finite(value)
+}
+
+fn strip_suffix_ci<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    if value.len() < suffix.len() {
+        return None;
+    }
+    let split = value.len() - suffix.len();
+    let (head, tail) = value.split_at(split);
+    tail.eq_ignore_ascii_case(suffix).then_some(head)
 }
 
 #[cfg(test)]

@@ -23,7 +23,9 @@ pub(crate) fn collect_node_animations(
     state: &converter::State,
     cache: &mut converter::Cache,
 ) -> Vec<Arc<Animation>> {
-    collect_animations(node, state.all_animations, state, cache)
+    let mut animations = collect_animations(node, state.all_animations, state, cache);
+    animations.extend(super::css::build_css_animations(node, node.document()));
+    animations
 }
 
 pub(crate) fn collect_animations(
