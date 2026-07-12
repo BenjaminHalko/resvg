@@ -9,6 +9,8 @@ use crate::{
     ApproxEqUlps, Color, Fill, FillRule, LineCap, LineJoin, Opacity, Paint, Stroke,
     StrokeMiterlimit, Units,
 };
+#[cfg(feature = "animation")]
+use crate::{FillCarrierState, StrokeCarrierState};
 
 impl<'a, 'input: 'a> FromValue<'a, 'input> for LineCap {
     fn parse(_: SvgNode, _: AId, value: &str) -> Option<Self> {
@@ -141,6 +143,90 @@ pub(crate) fn resolve_stroke(
     };
 
     Some(stroke)
+}
+
+#[cfg(feature = "animation")]
+pub(crate) fn resolve_fill_carrier(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<FillCarrierState> {
+    if state.parent_clip_path.is_some()
+        || resolve_fill(node, has_bbox, state, cache).is_some()
+        || !super::animation::collect::has_paint_animation(node, state, &["fill"])
+    {
+        return None;
+    }
+
+    Some(FillCarrierState::new(
+        true,
+        None,
+        node.find_attribute(AId::FillOpacity).unwrap_or(Opacity::ONE),
+        node.find_attribute(AId::FillRule).unwrap_or_default(),
+    ))
+}
+
+#[cfg(feature = "animation")]
+pub(crate) fn resolve_stroke_carrier(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<StrokeCarrierState> {
+    const ANIMATED_STROKE_ATTRIBUTES: &[&str] = &[
+        "stroke",
+        "stroke-width",
+        "stroke-dasharray",
+        "stroke-dashoffset",
+        "stroke-miterlimit",
+        "stroke-linecap",
+        "stroke-linejoin",
+    ];
+
+    if state.parent_clip_path.is_some()
+        || resolve_stroke(node, has_bbox, state, cache).is_some()
+        || !super::animation::collect::has_paint_animation(node, state, ANIMATED_STROKE_ATTRIBUTES)
+    {
+        return None;
+    }
+
+    let mut sub_opacity = Opacity::ONE;
+    let paint = node
+        .ancestors()
+        .find(|ancestor| ancestor.has_attribute(AId::Stroke))
+        .and_then(|ancestor| ancestor.attribute::<&str>(AId::Stroke))
+        .and_then(|value| {
+            convert_paint(
+                node,
+                value,
+                AId::Stroke,
+                has_bbox,
+                state,
+                &mut sub_opacity,
+                cache,
+            )
+        })
+        .map(|(paint, _)| paint);
+
+    if paint.is_none()
+        && super::animation::collect::has_paint_animation(node, state, &["stroke-width"])
+    {
+        log::warn!("Stroke width animation on an element without a stroke has no effect.");
+    }
+
+    let miterlimit = node.find_attribute(AId::StrokeMiterlimit).unwrap_or(4.0).max(1.0);
+    Some(StrokeCarrierState::new(
+        true,
+        paint,
+        sub_opacity * node.find_attribute(AId::StrokeOpacity).unwrap_or(Opacity::ONE),
+        node.resolve_length(AId::StrokeWidth, state, 1.0),
+        node.find_attribute(AId::StrokeLinecap).unwrap_or_default(),
+        node.find_attribute(AId::StrokeLinejoin).unwrap_or_default(),
+        StrokeMiterlimit::new(miterlimit),
+        conv_dasharray(node, state),
+        node.resolve_length(AId::StrokeDashoffset, state, 0.0),
+    ))
 }
 
 fn convert_paint(

@@ -167,6 +167,8 @@ fn convert_url(
     object_bbox: Option<NonZeroRect>,
     cache: &mut converter::Cache,
 ) -> Result<Option<Arc<Filter>>, ()> {
+    #[cfg(feature = "animation")]
+    super::animation::collect::warn_filter_content_animations(node, state);
     let units = convert_units(node, AId::FilterUnits, Units::ObjectBoundingBox);
     let primitive_units = convert_units(node, AId::PrimitiveUnits, Units::UserSpaceOnUse);
 
@@ -871,6 +873,10 @@ fn convert_image_inner(
         aspect,
         actual_size,
         filter_subregion.translate_to(0.0, 0.0)?,
+        #[cfg(feature = "animation")]
+        None,
+        #[cfg(feature = "animation")]
+        None,
         cache,
         &mut root,
     );

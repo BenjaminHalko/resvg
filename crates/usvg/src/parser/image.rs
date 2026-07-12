@@ -11,6 +11,8 @@ use crate::{
     ClipPath, Group, Image, ImageKind, ImageRendering, Node, NonZeroRect, Path, Size, Transform,
     Tree, Visibility,
 };
+#[cfg(feature = "animation")]
+use crate::{ImageCarrierState, NodeAnimation};
 
 /// A shorthand for [ImageHrefResolver]'s data function.
 pub type ImageHrefDataResolverFn<'a> =
@@ -129,6 +131,15 @@ enum ImageFormat {
     SVG,
 }
 
+/// The transform and optional clipping rectangle for an image viewport.
+#[derive(Clone, Copy, Debug)]
+pub struct ImageViewport {
+    /// The transform from intrinsic image coordinates into the viewport.
+    pub transform: Transform,
+    /// The clipping rectangle required by `preserveAspectRatio="slice"`.
+    pub clip_rect: Option<NonZeroRect>,
+}
+
 pub(crate) fn convert(
     node: SvgNode,
     state: &converter::State,
@@ -188,7 +199,56 @@ pub(crate) fn convert(
     let aspect: AspectRatio = node.attribute(AId::PreserveAspectRatio).unwrap_or_default();
 
     let rect = NonZeroRect::from_xywh(x, y, width, height);
-    let rect = rect.log_none(|| log::warn!("Image has an invalid size. Skipped."))?;
+    #[cfg(feature = "animation")]
+    let root_animations = super::animation::collect::image_root_animations(node, state, cache);
+    #[cfg(feature = "animation")]
+    let image_animations = super::animation::collect::renderable_animations(node, state, cache);
+    #[cfg(feature = "animation")]
+    let underlying_renderable = rect.is_some();
+    let rect = match rect {
+        Some(rect) => rect,
+        None => {
+            #[cfg(feature = "animation")]
+            if !root_animations.is_empty() {
+                NonZeroRect::from_xywh(x, y, actual_size.width(), actual_size.height())?
+            } else {
+                log::warn!("Image has an invalid size. Skipped.");
+                return None;
+            }
+            #[cfg(not(feature = "animation"))]
+            {
+                log::warn!("Image has an invalid size. Skipped.");
+                return None;
+            }
+        }
+    };
+    #[cfg(feature = "animation")]
+    let root_animation = (!root_animations.is_empty() || !underlying_renderable).then(|| {
+        Box::new(NodeAnimation::new(
+            root_animations,
+            super::animation::collect::base_hidden(node),
+            None,
+            None,
+            None,
+            Some(ImageCarrierState::new(
+                underlying_renderable,
+                (x, y, width, height),
+                aspect,
+                actual_size,
+            )),
+        ))
+    });
+    #[cfg(feature = "animation")]
+    let image_animation = (!image_animations.is_empty()).then(|| {
+        Box::new(NodeAnimation::new(
+            image_animations,
+            super::animation::collect::base_hidden(node),
+            None,
+            None,
+            None,
+            None,
+        ))
+    });
 
     convert_inner(
         kind,
@@ -198,6 +258,10 @@ pub(crate) fn convert(
         aspect,
         actual_size,
         rect,
+        #[cfg(feature = "animation")]
+        root_animation,
+        #[cfg(feature = "animation")]
+        image_animation,
         cache,
         parent,
     )
@@ -211,6 +275,8 @@ pub(crate) fn convert_inner(
     aspect: AspectRatio,
     actual_size: Size,
     rect: NonZeroRect,
+    #[cfg(feature = "animation")] root_animation: Option<Box<NodeAnimation>>,
+    #[cfg(feature = "animation")] image_animation: Option<Box<NodeAnimation>>,
     cache: &mut converter::Cache,
     parent: &mut Group,
 ) -> Option<()> {
@@ -247,10 +313,14 @@ pub(crate) fn convert_inner(
         abs_transform,
         abs_bounding_box,
         #[cfg(feature = "animation")]
-        animation: None,
+        animation: image_animation,
     })));
     g.transform = image_ts;
     g.abs_transform = abs_transform;
+    #[cfg(feature = "animation")]
+    {
+        g.animation = root_animation;
+    }
     g.calculate_bounding_boxes();
 
     if aspect.slice {
@@ -285,6 +355,38 @@ pub(crate) fn convert_inner(
     }
 
     Some(())
+}
+
+/// Resolves an image viewport transform and optional slice clip rectangle.
+pub fn image_viewport(
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    aspect: AspectRatio,
+    image_size: Size,
+) -> Option<ImageViewport> {
+    let rect = NonZeroRect::from_xywh(x, y, width, height)?;
+    let aligned_size = fit_view_box(image_size, rect, aspect);
+    let (aligned_x, aligned_y) = crate::aligned_pos(
+        aspect.align,
+        rect.x(),
+        rect.y(),
+        rect.width() - aligned_size.width(),
+        rect.height() - aligned_size.height(),
+    );
+    let view_box = aligned_size.to_non_zero_rect(aligned_x, aligned_y);
+    Some(ImageViewport {
+        transform: Transform::from_row(
+            view_box.width() / image_size.width(),
+            0.0,
+            0.0,
+            view_box.height() / image_size.height(),
+            view_box.x(),
+            view_box.y(),
+        ),
+        clip_rect: aspect.slice.then_some(rect),
+    })
 }
 
 pub(crate) fn get_href_data(href: &str, state: &converter::State) -> Option<ImageKind> {

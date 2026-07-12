@@ -39,6 +39,8 @@ pub struct State<'a> {
     /// Used only during nested `svg` size resolving.
     /// Width and height can be set independently.
     pub(crate) use_size: (Option<f32>, Option<f32>),
+    #[cfg(feature = "animation")]
+    pub(crate) all_animations: &'a [(svgtree::NodeId, SvgNode<'a, 'a>)],
     pub(crate) opt: &'a Options<'a>,
 }
 
@@ -347,7 +349,19 @@ impl SvgColorExt for svgtypes::Color {
 /// - If `Document` doesn't have a valid size - returns `Error::InvalidSize`.
 pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<Tree, Error> {
     let svg = svg_doc.root_element();
-    let (size, restore_viewbox) = resolve_svg_size(&svg, opt);
+    #[cfg(feature = "animation")]
+    let all_animations = svg_doc
+        .descendants()
+        .filter(|node| node.tag_name().is_some_and(|tag| tag.is_animation()))
+        .enumerate()
+        .map(|(index, node)| (svgtree::NodeId::from(index), node))
+        .collect::<Vec<_>>();
+    let (size, restore_viewbox) = resolve_svg_size(
+        &svg,
+        opt,
+        #[cfg(feature = "animation")]
+        &all_animations,
+    );
     let size = size?;
     let view_box = ViewBox {
         rect: svg
@@ -390,6 +404,8 @@ pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<
         fe_image_link: false,
         view_box: view_box.rect,
         use_size: (None, None),
+        #[cfg(feature = "animation")]
+        all_animations: &all_animations,
         opt,
     };
 
@@ -488,7 +504,11 @@ fn background_path(background_color: svgtypes::Color, area: Rect) -> Option<Path
     Some(path)
 }
 
-fn resolve_svg_size(svg: &SvgNode, opt: &Options) -> (Result<Size, Error>, bool) {
+fn resolve_svg_size(
+    svg: &SvgNode,
+    opt: &Options,
+    #[cfg(feature = "animation")] all_animations: &[(svgtree::NodeId, SvgNode)],
+) -> (Result<Size, Error>, bool) {
     let mut state = State {
         parent_clip_path: None,
         context_element: None,
@@ -496,6 +516,8 @@ fn resolve_svg_size(svg: &SvgNode, opt: &Options) -> (Result<Size, Error>, bool)
         fe_image_link: false,
         view_box: NonZeroRect::from_xywh(0.0, 0.0, 100.0, 100.0).unwrap(),
         use_size: (None, None),
+        #[cfg(feature = "animation")]
+        all_animations,
         opt,
     };
 
@@ -587,6 +609,13 @@ pub(crate) fn convert_element(node: SvgNode, state: &State, cache: &mut Cache, p
     }
 
     if !node.is_visible_element(state.opt) {
+        #[cfg(feature = "animation")]
+        if !(node.attribute(AId::Display) == Some("none")
+            && super::animation::collect::has_display_or_visibility_animation(node, state))
+        {
+            return;
+        }
+        #[cfg(not(feature = "animation"))]
         return;
     }
 
@@ -598,6 +627,11 @@ pub(crate) fn convert_element(node: SvgNode, state: &State, cache: &mut Cache, p
     if tag_name == EId::Switch {
         super::switch::convert(node, state, cache, parent);
         return;
+    }
+
+    #[cfg(feature = "animation")]
+    if tag_name == EId::Text {
+        super::animation::collect::warn_text_animations(node, state);
     }
 
     if let Some(g) = convert_group(node, state, false, cache, parent, &|cache, g| {
@@ -623,8 +657,21 @@ fn convert_element_impl(
         | EId::Polyline
         | EId::Polygon
         | EId::Path => {
-            if let Some(path) = super::shapes::convert(node, state) {
-                convert_path(node, path, state, cache, parent);
+            let path = super::shapes::convert(node, state);
+            #[cfg(feature = "animation")]
+            let underlying_renderable = path.is_some();
+            #[cfg(feature = "animation")]
+            let path = path.or_else(|| super::animation::collect::synthesized_path(node, state, cache));
+            if let Some(path) = path {
+                convert_path(
+                    node,
+                    path,
+                    #[cfg(feature = "animation")]
+                    underlying_renderable,
+                    state,
+                    cache,
+                    parent,
+                );
             }
         }
         EId::Image => {
@@ -673,6 +720,13 @@ pub(crate) fn convert_clip_path_elements(
         }
 
         if !node.is_visible_element(state.opt) {
+            #[cfg(feature = "animation")]
+            if !(node.attribute(AId::Display) == Some("none")
+                && super::animation::collect::has_display_or_visibility_animation(node, state))
+            {
+                continue;
+            }
+            #[cfg(not(feature = "animation"))]
             continue;
         }
 
@@ -699,8 +753,21 @@ fn convert_clip_path_elements_impl(
 ) {
     match tag_name {
         EId::Rect | EId::Circle | EId::Ellipse | EId::Polyline | EId::Polygon | EId::Path => {
-            if let Some(path) = super::shapes::convert(node, state) {
-                convert_path(node, path, state, cache, parent);
+            let path = super::shapes::convert(node, state);
+            #[cfg(feature = "animation")]
+            let underlying_renderable = path.is_some();
+            #[cfg(feature = "animation")]
+            let path = path.or_else(|| super::animation::collect::synthesized_path(node, state, cache));
+            if let Some(path) = path {
+                convert_path(
+                    node,
+                    path,
+                    #[cfg(feature = "animation")]
+                    underlying_renderable,
+                    state,
+                    cache,
+                    parent,
+                );
             }
         }
         EId::Text => {
@@ -792,6 +859,21 @@ pub(crate) fn convert_group(
     };
     collect_children(cache, &mut g);
 
+    #[cfg(feature = "animation")]
+    {
+        let animations = super::animation::collect::wrapper_animations(node, state, cache);
+        if !animations.is_empty() {
+            g.animation = Some(Box::new(NodeAnimation::new(
+                animations,
+                super::animation::collect::base_hidden(node),
+                None,
+                None,
+                None,
+                None,
+            )));
+        }
+    }
+
     // We need to know group's bounding box before converting
     // clipPaths, masks and filters.
     let object_bbox = g.calculate_object_bbox();
@@ -846,6 +928,10 @@ pub(crate) fn convert_group(
         filters
     };
 
+    #[cfg(feature = "animation")]
+    let has_wrapper_animation = g.animation.is_some();
+    #[cfg(not(feature = "animation"))]
+    let has_wrapper_animation = false;
     let required = opacity.get().approx_ne_ulps(&1.0, 4)
         || clip_path.is_some()
         || mask.is_some()
@@ -854,7 +940,8 @@ pub(crate) fn convert_group(
         || blend_mode != BlendMode::Normal
         || isolate
         || is_g_or_use
-        || force;
+        || force
+        || has_wrapper_animation;
 
     if !required {
         parent.children.append(&mut g.children);
@@ -874,6 +961,7 @@ pub(crate) fn convert_group(
 fn convert_path(
     node: SvgNode,
     tiny_skia_path: Arc<tiny_skia_path::Path>,
+    #[cfg(feature = "animation")] underlying_renderable: bool,
     state: &State,
     cache: &mut Cache,
     parent: &mut Group,
@@ -886,6 +974,10 @@ fn convert_path(
     let has_bbox = tiny_skia_path.bounds().width() > 0.0 && tiny_skia_path.bounds().height() > 0.0;
     let mut fill = super::style::resolve_fill(node, has_bbox, state, cache);
     let mut stroke = super::style::resolve_stroke(node, has_bbox, state, cache);
+    #[cfg(feature = "animation")]
+    let fill_carrier = super::style::resolve_fill_carrier(node, has_bbox, state, cache);
+    #[cfg(feature = "animation")]
+    let stroke_carrier = super::style::resolve_stroke_carrier(node, has_bbox, state, cache);
     let visibility: Visibility = node.find_attribute(AId::Visibility).unwrap_or_default();
     let mut visible = visibility == Visibility::Visible;
     let rendering_mode: ShapeRendering = node
@@ -900,7 +992,11 @@ fn convert_path(
 
     // If a path doesn't have a fill or a stroke then it's invisible.
     // By setting `visibility` to `hidden` we are disabling rendering of this path.
-    if fill.is_none() && stroke.is_none() {
+    #[cfg(feature = "animation")]
+    let has_paint_carrier = fill_carrier.is_some() || stroke_carrier.is_some();
+    #[cfg(not(feature = "animation"))]
+    let has_paint_carrier = false;
+    if fill.is_none() && stroke.is_none() && !has_paint_carrier {
         visible = false;
     }
 
@@ -992,10 +1088,25 @@ fn convert_path(
         path_transform,
     );
 
-    let path = match path {
+    let mut path = match path {
         Some(v) => v,
         None => return,
     };
+
+    #[cfg(feature = "animation")]
+    {
+        let animations = super::animation::collect::renderable_animations(node, state, cache);
+        if !animations.is_empty() || fill_carrier.is_some() || stroke_carrier.is_some() || !underlying_renderable {
+            path.animation = Some(Box::new(NodeAnimation::new(
+                animations,
+                super::animation::collect::base_hidden(node),
+                Some(PathCarrierState::new(underlying_renderable)),
+                fill_carrier,
+                stroke_carrier,
+                None,
+            )));
+        }
+    }
 
     match (raw_paint_order.order, marker) {
         ([PaintOrderKind::Markers, _, _], Some(markers_node)) => {

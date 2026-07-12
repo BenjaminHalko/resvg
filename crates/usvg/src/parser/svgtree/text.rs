@@ -56,6 +56,12 @@ fn parse_svg_text_element_impl<'input>(
             None => continue,
         };
 
+        #[cfg(feature = "animation")]
+        if tag_name.is_animation() {
+            log::warn!("Animation of text elements is not supported.");
+            continue;
+        }
+
         if tag_name == EId::A {
             // Treat links as simple text.
             tag_name = EId::Tspan;
