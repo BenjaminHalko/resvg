@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use svgtypes::Length;
 
-use super::geom::{ShapeGeometry, bake_geometry_animation};
+use super::geom::{ShapeGeometry, bake_geometry_animation, bake_geometry_animation_with_sum_base};
 use super::motion::parse_animate_motion;
 use super::timing::parse_easing;
 use super::values::{BaseValue, SmilValues, parse_smil_transform_values, parse_smil_values};
@@ -332,7 +332,7 @@ fn parse_geometry_animation(
     state: &converter::State,
 ) -> Option<SmilValues> {
     let geometry = shape_geometry(target, state);
-    let (values, offsets, raw_values) = if matches!(attribute_name, "d" | "points") {
+    let (mut values, mut offsets, raw_values) = if matches!(attribute_name, "d" | "points") {
         let values = raw_geometry_values(target, node, attribute_name, is_set)?;
         let offsets = offsets(values.len(), easing.key_times());
         (Vec::new(), offsets, Some(values))
@@ -381,8 +381,29 @@ fn parse_geometry_animation(
             .collect();
         (values, offsets, None)
     };
+    let sum_over_base =
+        !matches!(attribute_name, "d" | "points") && matches!(additive, Additive::Sum);
+    if sum_over_base {
+        let base = geometry.attribute(attribute_name)?;
+        for value in &mut values {
+            *value += base;
+        }
+    }
+    if !is_set
+        && matches!(easing.calc_mode(), crate::CalcMode::Discrete)
+        && easing.key_times().is_none()
+        && node.has_attribute(AId::From)
+        && node.has_attribute(AId::To)
+        && values.len() == 2
+    {
+        offsets[1] = crate::NormalizedF32::new_clamped(0.5);
+    }
     let key_timing_fns = vec![None; offsets.len()];
-    let bake = bake_geometry_animation(
+    let bake = (if sum_over_base {
+        bake_geometry_animation_with_sum_base
+    } else {
+        bake_geometry_animation
+    })(
         target.tag_name()?,
         attribute_name,
         geometry,
@@ -396,7 +417,11 @@ fn parse_geometry_animation(
     )?;
     Some(SmilValues {
         kind: bake.kind,
-        additive,
+        additive: if sum_over_base {
+            Additive::Replace
+        } else {
+            additive
+        },
         accumulate,
         calc_mode: bake.calc_mode,
     })

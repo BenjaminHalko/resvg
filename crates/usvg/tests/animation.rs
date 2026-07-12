@@ -429,6 +429,21 @@ fn set_produces_a_single_keyframe_discrete_track() {
 }
 
 #[test]
+fn discrete_geometry_from_to_switches_at_half_duration() {
+    let tree = parse(
+        "<rect width='50' height='20'><animate attributeName='height' calcMode='discrete' from='200' to='20' dur='4s'/></rect>",
+    );
+    let animation = &path(&tree.root().children()[0])
+        .animation()
+        .unwrap()
+        .animations()[0];
+    let AnimationKind::Path(track) = animation.kind() else {
+        panic!("expected a path track");
+    };
+    assert_eq!(track.keyframes()[1].offset().get(), 0.5);
+}
+
+#[test]
 fn bare_by_opacity_is_a_sum_delta_track() {
     let tree = parse(
         "<rect width='4' height='4'><animate attributeName='opacity' by='0.5' dur='1s'/></rect>",

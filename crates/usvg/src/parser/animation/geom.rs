@@ -58,6 +58,25 @@ pub(crate) struct ShapeGeometry {
 }
 
 impl ShapeGeometry {
+    pub(crate) fn attribute(&self, attribute: &str) -> Option<f32> {
+        match attribute {
+            "x" => Some(self.x),
+            "y" => Some(self.y),
+            "width" => Some(self.width),
+            "height" => Some(self.height),
+            "rx" => Some(self.rx),
+            "ry" => Some(self.ry),
+            "cx" => Some(self.cx),
+            "cy" => Some(self.cy),
+            "r" => Some(self.r),
+            "x1" => Some(self.x1),
+            "y1" => Some(self.y1),
+            "x2" => Some(self.x2),
+            "y2" => Some(self.y2),
+            _ => None,
+        }
+    }
+
     /// Returns a copy with `attribute` set to `value`, or `None` when the
     /// attribute is not a shape geometry scalar.
     fn with_attribute(mut self, attribute: &str, value: f32) -> Option<Self> {
@@ -127,6 +146,61 @@ pub(crate) fn bake_geometry_animation(
     d_keyframes: Option<&[&str]>,
     points_keyframes: Option<&[&str]>,
 ) -> Option<GeometryBake> {
+    bake_geometry_animation_inner(
+        element_tag,
+        attribute_name,
+        base,
+        keyframe_values,
+        key_offsets,
+        key_timing_fns,
+        calc_mode,
+        accumulate,
+        d_keyframes,
+        points_keyframes,
+        false,
+    )
+}
+
+pub(crate) fn bake_geometry_animation_with_sum_base(
+    element_tag: EId,
+    attribute_name: &str,
+    base: ShapeGeometry,
+    keyframe_values: &[f32],
+    key_offsets: &[NormalizedF32],
+    key_timing_fns: &[Option<TimingFunction>],
+    calc_mode: CalcMode,
+    accumulate: Accumulate,
+    d_keyframes: Option<&[&str]>,
+    points_keyframes: Option<&[&str]>,
+) -> Option<GeometryBake> {
+    bake_geometry_animation_inner(
+        element_tag,
+        attribute_name,
+        base,
+        keyframe_values,
+        key_offsets,
+        key_timing_fns,
+        calc_mode,
+        accumulate,
+        d_keyframes,
+        points_keyframes,
+        true,
+    )
+}
+
+fn bake_geometry_animation_inner(
+    element_tag: EId,
+    attribute_name: &str,
+    base: ShapeGeometry,
+    keyframe_values: &[f32],
+    key_offsets: &[NormalizedF32],
+    key_timing_fns: &[Option<TimingFunction>],
+    calc_mode: CalcMode,
+    accumulate: Accumulate,
+    d_keyframes: Option<&[&str]>,
+    points_keyframes: Option<&[&str]>,
+    accumulate_from_base: bool,
+) -> Option<GeometryBake> {
     let (
         Baked {
             keyframes,
@@ -151,8 +225,12 @@ pub(crate) fn bake_geometry_animation(
                 key_offsets,
                 key_timing_fns,
             )?,
-            base.with_attribute(attribute_name, 0.0)
-                .and_then(|geometry| build_shape_path(element_tag, &geometry)),
+            if accumulate_from_base {
+                build_shape_path(element_tag, &base)
+            } else {
+                base.with_attribute(attribute_name, 0.0)
+                    .and_then(|geometry| build_shape_path(element_tag, &geometry))
+            },
         ),
     };
 
