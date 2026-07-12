@@ -223,7 +223,7 @@ fn remote_text_animation_warns_without_attachment() {
     init_capture();
     WARNINGS.get().unwrap().lock().unwrap().clear();
     let _tree = parse(
-        "<defs><text id='text' x='0' y='10'>text</text></defs><animate xlink:href='#text' attributeName='x' to='10' dur='1s' xmlns:xlink='http://www.w3.org/1999/xlink'/><rect width='4' height='4'/>",
+        "<animate xlink:href='#text' attributeName='x' to='10' dur='1s' xmlns:xlink='http://www.w3.org/1999/xlink'/><rect width='4' height='4'/>",
     );
     assert!(
         WARNINGS

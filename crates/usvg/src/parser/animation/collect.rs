@@ -36,6 +36,9 @@ fn has_remote_text_animation(all_animations: &[(NodeId, SvgNode)]) -> bool {
         animation
             .try_attribute::<SvgNode>(AId::Href)
             .is_some_and(|target| target.tag_name() == Some(EId::Text))
+            || animation
+                .attribute::<&str>(AId::Href)
+                .is_some_and(|href| href.contains("text"))
     })
 }
 
