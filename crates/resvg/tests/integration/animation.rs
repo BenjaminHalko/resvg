@@ -193,3 +193,121 @@ fn fill_carrier_preserves_opacity_and_rule() {
     let center = alpha_at(&pixmap, 30, 30);
     assert!(center < 20, "even-odd center must be a hole, got {center}");
 }
+
+/// A 10x10 solid green raster stand-in, embedded as an SVG data URI.
+const GREEN_IMAGE: &str = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSJncmVlbiIvPjwvc3ZnPg==";
+
+/// A 10x10 image split red (left half) and blue (right half), as a data URI.
+const SPLIT_IMAGE: &str = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjUiIGhlaWdodD0iMTAiIGZpbGw9InJlZCIvPjxyZWN0IHg9IjUiIHk9IjAiIHdpZHRoPSI1IiBoZWlnaHQ9IjEwIiBmaWxsPSJibHVlIi8+PC9zdmc+";
+
+#[test]
+fn animated_root_view_box_pans_content() {
+    // A `viewBox` panning its origin right shifts rendered content left: the
+    // rect's left edge moves from x=40 toward x=0 as the origin advances to 40.
+    let svg = format!(
+        r#"<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <animate attributeName="viewBox" from="0 0 100 100" to="40 0 100 100"
+            begin="0s" dur="4s" fill="freeze"/>
+        <rect x="40" y="40" width="20" height="20" fill="green"/>
+    </svg>"#
+    );
+    let t0 = nonzero_bbox(&render_at_pixmap(&svg, 0.0)).expect("content at t=0");
+    let end = nonzero_bbox(&render_at_pixmap(&svg, 4.0)).expect("content at t=end");
+    assert!((t0.0 as i32 - 40).abs() <= 2, "left edge starts near x=40, got {}", t0.0);
+    let shift = end.0 as i32 - t0.0 as i32;
+    assert!((shift + 40).abs() <= 2, "view box pan shifts content ~-40px, got {shift}");
+}
+
+#[test]
+fn animated_slice_image_scales_and_reclips() {
+    // A red|blue split image sliced into a widening rectangle: the clipped region
+    // grows to the right and the image rescales, moving the color boundary.
+    let svg = format!(
+        r#"<svg width="100" height="100" viewBox="0 0 100 100"
+        xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <image x="10" y="10" width="20" height="40" preserveAspectRatio="xMidYMid slice"
+            xlink:href="{SPLIT_IMAGE}">
+            <animate attributeName="width" from="20" to="80" begin="0s" dur="4s" fill="freeze"/>
+        </image>
+    </svg>"#
+    );
+    let t0 = render_at_pixmap(&svg, 0.0);
+    let mid = render_at_pixmap(&svg, 2.0);
+    let bbox0 = nonzero_bbox(&t0).expect("content at t=0");
+    let bbox_mid = nonzero_bbox(&mid).expect("content at t=mid");
+    let width0 = bbox0.2 - bbox0.0 + 1;
+    let width_mid = bbox_mid.2 - bbox_mid.0 + 1;
+    assert!(width_mid > width0 + 10, "slice clip widens, {width0} -> {width_mid}");
+    // A pixel outside the t=0 clip becomes covered once the slice widens.
+    assert_eq!(alpha_at(&t0, 45, 30), 0, "pixel outside the t=0 slice is empty");
+    assert!(alpha_at(&mid, 45, 30) > 200, "the widened slice covers that pixel");
+    // The rescale moves the red|blue boundary, flipping a fixed interior pixel.
+    let c0 = t0.pixel(25, 30).unwrap();
+    let c_mid = mid.pixel(25, 30).unwrap();
+    assert!(
+        c0.red().abs_diff(c_mid.red()) > 100 || c0.blue().abs_diff(c_mid.blue()) > 100,
+        "image rescale flips the (25,30) hue"
+    );
+}
+
+#[test]
+fn partial_image_animation_keeps_static_dims() {
+    // Animating only `width` leaves x, y, and height at their static values: at
+    // t=mid the square image fills the 40x40 rect anchored at (10,10).
+    let svg = format!(
+        r#"<svg width="100" height="100" viewBox="0 0 100 100"
+        xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <image x="10" y="10" width="20" height="40" xlink:href="{GREEN_IMAGE}">
+            <animate attributeName="width" from="20" to="60" begin="0s" dur="4s" fill="freeze"/>
+        </image>
+    </svg>"#
+    );
+    let bbox = nonzero_bbox(&render_at_pixmap(&svg, 2.0)).expect("content at t=mid");
+    assert!((bbox.0 as i32 - 10).abs() <= 2, "static x preserved, got {}", bbox.0);
+    assert!((bbox.1 as i32 - 10).abs() <= 2, "static y preserved, got {}", bbox.1);
+    let height = bbox.3 - bbox.1 + 1;
+    assert!((height as i32 - 40).abs() <= 3, "static height preserved, got {height}");
+}
+
+#[test]
+fn image_width_crossing_zero_renders_nothing() {
+    // `width` dipping to 0 at the mid keyframe hides the image without panicking,
+    // and it reappears on either side of the crossing.
+    let svg = format!(
+        r#"<svg width="100" height="100" viewBox="0 0 100 100"
+        xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <image x="10" y="10" width="40" height="40" xlink:href="{GREEN_IMAGE}">
+            <animate attributeName="width" values="40;0;40" begin="0s" dur="4s" fill="freeze"/>
+        </image>
+    </svg>"#
+    );
+    assert!(
+        nonzero_bbox(&render_at_pixmap(&svg, 2.0)).is_none(),
+        "zero width renders nothing at the crossing"
+    );
+    assert!(
+        nonzero_bbox(&render_at_pixmap(&svg, 0.0)).is_some(),
+        "the image renders on either side of the crossing"
+    );
+}
+
+#[test]
+fn zero_static_image_reveals_under_render_at() {
+    // A statically zero-width image is a placeholder: `render` paints nothing,
+    // while `render_at` reveals the interpolated width.
+    let svg = format!(
+        r#"<svg width="100" height="100" viewBox="0 0 100 100"
+        xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <image x="10" y="10" width="0" height="40" xlink:href="{GREEN_IMAGE}">
+            <animate attributeName="width" from="0" to="80" begin="0s" dur="4s" fill="freeze"/>
+        </image>
+    </svg>"#
+    );
+    assert!(
+        nonzero_bbox(&render_pixmap(&svg)).is_none(),
+        "the zero-width placeholder paints nothing under render()"
+    );
+    let mid = nonzero_bbox(&render_at_pixmap(&svg, 2.0)).expect("render_at reveals the image");
+    let width = mid.2 - mid.0 + 1;
+    assert!(width > 10, "the interpolated width renders, got {width}");
+}

@@ -67,6 +67,10 @@ pub fn render(
 /// load-time geometry; `objectBoundingBox`-derived resolutions are not
 /// re-derived per frame.
 ///
+/// An animated root `viewBox` is applied as an additional root transform; the
+/// static `viewBox` transform is assumed to be the identity, so a document whose
+/// static `viewBox` differs from its size is not re-derived per frame.
+///
 /// The produced content is in the sRGB color space.
 #[cfg(feature = "animation")]
 pub fn render_at(
@@ -88,6 +92,13 @@ pub fn render_at(
         max_bbox,
         time: Some(time.is_finite().then_some(time).unwrap_or(0.0)),
     };
+
+    // An active root `viewBox` animation replaces the root transform.
+    let transform = match ctx.time.and_then(|t| render::root_view_box_transform(tree, t)) {
+        Some(view_box_ts) => transform.pre_concat(view_box_ts),
+        None => transform,
+    };
+
     render::render_nodes(tree.root(), &ctx, transform, pixmap);
 }
 
