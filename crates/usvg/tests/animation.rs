@@ -28,6 +28,17 @@ impl log::Log for CaptureLogger {
     fn flush(&self) {}
 }
 
+static LOGGER_INIT: Once = Once::new();
+static WARN_GUARD: Mutex<()> = Mutex::new(());
+
+fn init_capture() {
+    LOGGER_INIT.call_once(|| {
+        WARNINGS.get_or_init(|| Mutex::new(Vec::new()));
+        log::set_logger(&CaptureLogger).unwrap();
+        log::set_max_level(log::LevelFilter::Warn);
+    });
+}
+
 fn parse(body: &str) -> Tree {
     Tree::from_str(&format!("<svg xmlns='{NS}' width='20' height='20'>{body}</svg>"), &Options::default())
         .unwrap()
@@ -126,12 +137,8 @@ fn zero_static_geometry_uses_a_path_animation_carrier() {
 
 #[test]
 fn text_animation_warns_without_attachment() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        WARNINGS.get_or_init(|| Mutex::new(Vec::new()));
-        log::set_logger(&CaptureLogger).unwrap();
-        log::set_max_level(log::LevelFilter::Warn);
-    });
+    let _guard = WARN_GUARD.lock().unwrap();
+    init_capture();
     WARNINGS.get().unwrap().lock().unwrap().clear();
     let tree = parse("<text x='0' y='10'>text<animate attributeName='opacity' from='0' to='1' dur='1s'/></text><rect width='4' height='4'/>");
     assert!(matches!(tree.root().children()[0], Node::Path(_)));
@@ -142,4 +149,109 @@ fn text_animation_warns_without_attachment() {
         .unwrap()
         .iter()
         .any(|warning| warning == "Animation of text elements is not supported."));
+}
+
+#[test]
+fn gradient_shared_by_two_shapes_keeps_tracks() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='1s'/></stop><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/><rect width='4' height='4' fill='url(#g)'/>");
+    assert_eq!(tree.linear_gradients().len(), 2);
+    assert!(tree
+        .linear_gradients()
+        .iter()
+        .all(|gradient| gradient.animation().is_some()));
+}
+
+#[test]
+fn gradient_stop_track_is_readable() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='1s'/></stop><stop offset='1' stop-color='green'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>");
+    let gradient = &tree.linear_gradients()[0];
+    let animation = gradient.animation().unwrap();
+    assert_eq!(animation.source_stops().len(), 2);
+    assert!(matches!(
+        animation.source_stops()[0].animations()[0].kind(),
+        AnimationKind::StopColor(_)
+    ));
+    assert!(animation.source_stops()[1].animations().is_empty());
+    assert_eq!(animation.source_index_of(0), Some(0));
+    assert_eq!(animation.source_index_of(1), Some(1));
+}
+
+#[test]
+fn three_stop_shared_offset_middle_is_kept() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0.5' stop-color='red'/><stop offset='0.5' stop-color='green'><animate attributeName='offset' from='0.5' to='0.9' dur='1s'/></stop><stop offset='0.5' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>");
+    let gradient = &tree.linear_gradients()[0];
+    assert_eq!(gradient.stops().len(), 3);
+    let animation = gradient.animation().unwrap();
+    assert_eq!(animation.source_stops().len(), 3);
+    assert!(matches!(
+        animation.source_stops()[1].animations()[0].kind(),
+        AnimationKind::StopOffset(_)
+    ));
+}
+
+#[test]
+fn one_stop_animation_is_not_collapsed() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='1s'/></stop></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>");
+    assert_eq!(tree.linear_gradients().len(), 1);
+    let gradient = &tree.linear_gradients()[0];
+    assert_eq!(gradient.stops().len(), 2);
+    let animation = gradient.animation().unwrap();
+    assert_eq!(animation.source_stops().len(), 1);
+    assert!(matches!(
+        animation.source_stops()[0].animations()[0].kind(),
+        AnimationKind::StopColor(_)
+    ));
+}
+
+#[test]
+fn objectboundingbox_geometry_keyframes_stay_native() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animate attributeName='x1' from='0.2' to='0.8' dur='1s'/></linearGradient></defs><rect width='10' height='10' fill='url(#g)'/>");
+    let gradient = &tree.linear_gradients()[0];
+    let transform = gradient.transform();
+    assert_eq!(transform.sx, 10.0);
+    assert_eq!(transform.sy, 10.0);
+    let animation = gradient.animation().unwrap();
+    let track = match animation.animations()[0].kind() {
+        AnimationKind::GradientGeometry(track) => track,
+        other => panic!("expected gradient geometry, got {other:?}"),
+    };
+    assert_eq!(*track.keyframes()[0].value(), 0.2);
+    assert_eq!(*track.keyframes()[1].value(), 0.8);
+}
+
+#[test]
+fn clone_preservation_across_different_bboxes() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animate attributeName='x1' from='0' to='1' dur='1s'/></linearGradient></defs><rect width='10' height='10' fill='url(#g)'/><rect width='4' height='8' fill='url(#g)'/>");
+    assert_eq!(tree.linear_gradients().len(), 2);
+    assert!(tree
+        .linear_gradients()
+        .iter()
+        .all(|gradient| gradient.animation().is_some()));
+}
+
+#[test]
+fn view_box_animation_to_transform_is_public() {
+    let tree = parse("<animate attributeName='viewBox' from='0 0 20 20' to='0 0 40 40' dur='1s'/>");
+    let animation = tree.view_box_animation().unwrap();
+    let sampled = usvg::NonZeroRect::from_xywh(0.0, 0.0, 40.0, 40.0).unwrap();
+    let transform = animation.to_transform(sampled, tree.size());
+    assert_eq!(transform.sx, 0.5);
+    assert_eq!(transform.sy, 0.5);
+}
+
+#[test]
+fn view_box_narrowing_keeps_first_warns_second() {
+    let _guard = WARN_GUARD.lock().unwrap();
+    init_capture();
+    WARNINGS.get().unwrap().lock().unwrap().clear();
+    let tree = parse("<animate attributeName='viewBox' from='0 0 20 20' to='0 0 10 10' dur='1s'/><animate attributeName='viewBox' from='0 0 20 20' to='0 0 40 40' dur='1s'/>");
+    let animation = tree.view_box_animation().unwrap();
+    assert_eq!(animation.track().keyframes()[1].value().width(), 10.0);
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Only a single non-additive viewBox animation is supported."));
 }

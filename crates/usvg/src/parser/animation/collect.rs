@@ -14,7 +14,7 @@ use crate::parser::converter;
 use crate::parser::svgtree::{AId, EId, NodeId, SvgNode};
 use crate::tree::animation::{
     Accumulate, Additive, Animation, AnimationKind, AnimationSource, AnimationVisibility, Easing,
-    Timing, TransformKind, TransformTrack,
+    Timing, TransformKind, TransformTrack, ViewBoxAnimation,
 };
 use crate::{Opacity, StrokeMiterlimit, Visibility};
 
@@ -70,6 +70,32 @@ pub(crate) fn image_root_animations(
         .into_iter()
         .filter(|animation| is_image_geometry_kind(animation.kind()))
         .collect()
+}
+
+pub(crate) fn collect_view_box_animation(
+    node: SvgNode,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<ViewBoxAnimation> {
+    let static_aspect: svgtypes::AspectRatio =
+        node.attribute(AId::PreserveAspectRatio).unwrap_or_default();
+    let mut result = None;
+    for animation in collect_node_animations(node, state, cache) {
+        let AnimationKind::ViewBox(track) = animation.kind() else {
+            continue;
+        };
+        if result.is_some() || matches!(animation.additive(), Additive::Sum) {
+            log::warn!("Only a single non-additive viewBox animation is supported.");
+            continue;
+        }
+        result = Some(ViewBoxAnimation::new(
+            track.clone(),
+            static_aspect,
+            animation.timing().clone(),
+            animation.easing().clone(),
+        ));
+    }
+    result
 }
 
 pub(crate) fn has_display_or_visibility_animation(node: SvgNode, state: &converter::State) -> bool {

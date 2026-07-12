@@ -433,6 +433,13 @@ pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<
         }
     }
 
+    #[cfg(feature = "animation")]
+    {
+        tree.view_box_animation =
+            super::animation::collect::collect_view_box_animation(svg, &state, &mut cache)
+                .map(Box::new);
+    }
+
     let root_ts = view_box.to_transform(tree.size());
     if root_ts.is_identity() && background_color.is_none() {
         convert_children(svg_doc.root(), &state, &mut cache, &mut tree.root);

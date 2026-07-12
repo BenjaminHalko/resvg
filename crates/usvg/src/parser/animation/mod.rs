@@ -8,3 +8,4 @@ pub(crate) mod motion;
 pub(crate) mod timing;
 pub(crate) mod values;
 pub(crate) mod collect;
+pub(crate) mod paint;

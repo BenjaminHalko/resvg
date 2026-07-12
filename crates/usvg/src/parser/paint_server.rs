@@ -29,8 +29,18 @@ pub(crate) fn convert(
 
     // Unwrap is safe, because we already checked for is_paint_server().
     let paint = match node.tag_name().unwrap() {
-        EId::LinearGradient => convert_linear(node, state),
-        EId::RadialGradient => convert_radial(node, state),
+        EId::LinearGradient => convert_linear(
+            node,
+            state,
+            #[cfg(feature = "animation")]
+            cache,
+        ),
+        EId::RadialGradient => convert_radial(
+            node,
+            state,
+            #[cfg(feature = "animation")]
+            cache,
+        ),
         EId::Pattern => convert_pattern(node, state, cache),
         _ => unreachable!(),
     };
@@ -45,7 +55,16 @@ pub(crate) fn convert(
 }
 
 #[inline(never)]
-fn convert_linear(node: SvgNode, state: &converter::State) -> Option<ServerOrColor> {
+fn convert_linear(
+    node: SvgNode,
+    state: &converter::State,
+    #[cfg(feature = "animation")] cache: &mut converter::Cache,
+) -> Option<ServerOrColor> {
+    #[cfg(feature = "animation")]
+    if let Some(result) = super::animation::paint::preserve_animated_gradient(node, state, cache) {
+        return result;
+    }
+
     let id = NonEmptyString::new(node.element_id().to_string())?;
 
     let stops = convert_stops(find_gradient_with_stops(node)?);
@@ -84,7 +103,16 @@ fn convert_linear(node: SvgNode, state: &converter::State) -> Option<ServerOrCol
 }
 
 #[inline(never)]
-fn convert_radial(node: SvgNode, state: &converter::State) -> Option<ServerOrColor> {
+fn convert_radial(
+    node: SvgNode,
+    state: &converter::State,
+    #[cfg(feature = "animation")] cache: &mut converter::Cache,
+) -> Option<ServerOrColor> {
+    #[cfg(feature = "animation")]
+    if let Some(result) = super::animation::paint::preserve_animated_gradient(node, state, cache) {
+        return result;
+    }
+
     let id = NonEmptyString::new(node.element_id().to_string())?;
 
     let stops = convert_stops(find_gradient_with_stops(node)?);
@@ -226,7 +254,7 @@ fn convert_pattern(
     Some(ServerOrColor::Server(Paint::Pattern(Arc::new(patt))))
 }
 
-fn convert_spread_method(node: SvgNode) -> SpreadMethod {
+pub(crate) fn convert_spread_method(node: SvgNode) -> SpreadMethod {
     let node = resolve_attr(node, AId::SpreadMethod);
     node.attribute(AId::SpreadMethod).unwrap_or_default()
 }
@@ -236,7 +264,7 @@ pub(crate) fn convert_units(node: SvgNode, name: AId, def: Units) -> Units {
     node.attribute(name).unwrap_or(def)
 }
 
-fn find_gradient_with_stops<'a, 'input: 'a>(
+pub(crate) fn find_gradient_with_stops<'a, 'input: 'a>(
     node: SvgNode<'a, 'input>,
 ) -> Option<SvgNode<'a, 'input>> {
     for link in node.href_iter() {
@@ -851,7 +879,7 @@ fn process_context_paint(
                     spread_method: lg.spread_method,
                     stops: lg.stops.clone(),
                     #[cfg(feature = "animation")]
-                    animation: None,
+                    animation: lg.base.animation.clone(),
                 },
             }));
         }
@@ -871,7 +899,7 @@ fn process_context_paint(
                     spread_method: rg.spread_method,
                     stops: rg.stops.clone(),
                     #[cfg(feature = "animation")]
-                    animation: None,
+                    animation: rg.base.animation.clone(),
                 },
             }));
         }
@@ -985,7 +1013,7 @@ impl Paint {
                             spread_method: lg.spread_method,
                             stops: lg.stops.clone(),
                             #[cfg(feature = "animation")]
-                            animation: None,
+                            animation: lg.base.animation.clone(),
                         },
                     });
                 }
@@ -1010,7 +1038,7 @@ impl Paint {
                             spread_method: rg.spread_method,
                             stops: rg.stops.clone(),
                             #[cfg(feature = "animation")]
-                            animation: None,
+                            animation: rg.base.animation.clone(),
                         },
                     });
                 }
