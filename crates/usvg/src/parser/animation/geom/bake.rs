@@ -1,132 +1,28 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Baking of geometry attribute animations into path-data keyframe tracks.
-//!
-//! Shape geometry attributes (`width`, `r`, `cx`, ...) and the `d`/`points`
-//! attributes are baked into a [`PathTrack`] at parse time by substituting each
-//! keyframe value into the corresponding shape builder. A keyframe sequence is
-//! point-wise interpolable only when every snapshot shares one verb sequence;
-//! otherwise the track falls back to discrete stepping.
-
 use std::sync::Arc;
 
-use tiny_skia_path::{Path, PathBuilder, PathSegment, Point};
+use tiny_skia_path::Path;
 
-use crate::parser::shapes::{
-    animated_ellipse_path, animated_rect_path, circle_path, ellipse_path, line_path, polyline_path,
-    rect_path,
-};
+#[cfg(test)]
+use tiny_skia_path::Point;
+
+use crate::NormalizedF32;
+use crate::parser::shapes::{animated_ellipse_path, animated_rect_path};
+#[cfg(test)]
+use crate::parser::shapes::{circle_path, polyline_path, rect_path};
 use crate::parser::svgtree::EId;
 use crate::tree::animation::{
     Accumulate, AnimationKind, CalcMode, PathKeyframe, PathTrack, TimingFunction,
 };
-use crate::{IsValidLength, NormalizedF32};
 
-/// The result of baking a geometry animation into a path track.
-pub(crate) struct GeometryBake {
-    /// The baked path track.
-    pub(crate) kind: AnimationKind,
-    /// The calculation mode, forced to `Discrete` when keyframes are not
-    /// point-wise interpolable.
-    pub(crate) calc_mode: CalcMode,
-}
-
-/// The resolved static geometry of a shape.
-///
-/// The animated attribute is overridden per keyframe; the remaining fields
-/// supply the shape's other parameters.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct ShapeGeometry {
-    pub(crate) x: f32,
-    pub(crate) y: f32,
-    pub(crate) width: f32,
-    pub(crate) height: f32,
-    pub(crate) rx: f32,
-    pub(crate) ry: f32,
-    pub(crate) cx: f32,
-    pub(crate) cy: f32,
-    pub(crate) r: f32,
-    pub(crate) x1: f32,
-    pub(crate) y1: f32,
-    pub(crate) x2: f32,
-    pub(crate) y2: f32,
-    #[cfg(feature = "animation")]
-    pub(crate) rx_is_implicit: bool,
-    #[cfg(feature = "animation")]
-    pub(crate) ry_is_implicit: bool,
-}
-
-impl ShapeGeometry {
-    pub(crate) fn attribute(&self, attribute: &str) -> Option<f32> {
-        match attribute {
-            "x" => Some(self.x),
-            "y" => Some(self.y),
-            "width" => Some(self.width),
-            "height" => Some(self.height),
-            "rx" => Some(self.rx),
-            "ry" => Some(self.ry),
-            "cx" => Some(self.cx),
-            "cy" => Some(self.cy),
-            "r" => Some(self.r),
-            "x1" => Some(self.x1),
-            "y1" => Some(self.y1),
-            "x2" => Some(self.x2),
-            "y2" => Some(self.y2),
-            _ => None,
-        }
-    }
-
-    /// Returns a copy with `attribute` set to `value`, or `None` when the
-    /// attribute is not a shape geometry scalar.
-    fn with_attribute(mut self, attribute: &str, value: f32) -> Option<Self> {
-        match attribute {
-            "x" => self.x = value,
-            "y" => self.y = value,
-            "width" => self.width = value,
-            "height" => self.height = value,
-            "rx" => {
-                self.rx = value;
-                #[cfg(feature = "animation")]
-                if self.ry_is_implicit {
-                    self.ry = value;
-                }
-            }
-            "ry" => {
-                self.ry = value;
-                #[cfg(feature = "animation")]
-                if self.rx_is_implicit {
-                    self.rx = value;
-                }
-            }
-            "cx" => self.cx = value,
-            "cy" => self.cy = value,
-            "r" => self.r = value,
-            "x1" => self.x1 = value,
-            "y1" => self.y1 = value,
-            "x2" => self.x2 = value,
-            "y2" => self.y2 = value,
-            _ => return None,
-        }
-        Some(self)
-    }
-}
-
-/// A baked keyframe before its path is shared behind an `Arc`.
-struct RawKeyframe {
-    offset: NormalizedF32,
-    path: Path,
-    renderable: bool,
-    timing_function: Option<TimingFunction>,
-}
-
-/// A baked keyframe sequence.
-struct Baked {
-    keyframes: Vec<RawKeyframe>,
-    /// Whether the value interpolates multiple parameters (`d`/`points`), which
-    /// cannot accumulate.
-    multi_param: bool,
-}
+use super::GeometryBake;
+use super::accumulate::{bake_accumulation, verbs_match};
+use super::keyframes::{
+    Baked, RawKeyframe, bake_path_data, bake_points, warn_invalid_geometry_value,
+};
+use super::shape::{ShapeGeometry, build_shape_path, is_shape_renderable};
 
 /// Bakes a geometry attribute animation into an [`AnimationKind::Path`] track.
 ///
@@ -338,224 +234,12 @@ fn build_animated_shape_path(
     build_shape_path(element_tag, &geometry)
 }
 
-/// Bakes each `d` keyframe by parsing it as absolute path data.
-fn bake_path_data(
-    d_keyframes: &[&str],
-    key_offsets: &[NormalizedF32],
-    key_timing_fns: &[Option<TimingFunction>],
-) -> Option<Baked> {
-    let mut keyframes = Vec::new();
-    for (i, &raw) in d_keyframes.iter().enumerate() {
-        let offset = *key_offsets.get(i)?;
-        let timing_function = key_timing_fns.get(i).copied().flatten();
-
-        let Some((path, renderable)) = parse_path_data(raw) else {
-            warn_invalid_geometry_value(raw);
-            continue;
-        };
-
-        keyframes.push(RawKeyframe {
-            offset,
-            path,
-            renderable,
-            timing_function,
-        });
-    }
-
-    Some(Baked {
-        keyframes,
-        multi_param: true,
-    })
-}
-
-/// Bakes each `points` keyframe by parsing it as a point list.
-fn bake_points(
-    element_tag: EId,
-    points_keyframes: &[&str],
-    key_offsets: &[NormalizedF32],
-    key_timing_fns: &[Option<TimingFunction>],
-) -> Option<Baked> {
-    let closed = matches!(element_tag, EId::Polygon);
-
-    let mut keyframes = Vec::new();
-    for (i, &raw) in points_keyframes.iter().enumerate() {
-        let offset = *key_offsets.get(i)?;
-        let timing_function = key_timing_fns.get(i).copied().flatten();
-
-        let points: Vec<_> = svgtypes::PointsParser::from(raw)
-            .map(|(x, y)| Point::from_xy(x as f32, y as f32))
-            .collect();
-        let Some(path) = polyline_path(&points, closed) else {
-            warn_invalid_geometry_value(raw);
-            continue;
-        };
-
-        keyframes.push(RawKeyframe {
-            offset,
-            path,
-            renderable: true,
-            timing_function,
-        });
-    }
-
-    Some(Baked {
-        keyframes,
-        multi_param: true,
-    })
-}
-
-/// Builds a shape path from resolved geometry using the shared shape builders.
-fn build_shape_path(element_tag: EId, g: &ShapeGeometry) -> Option<Path> {
-    match element_tag {
-        EId::Rect => rect_path(g.x, g.y, g.width, g.height, g.rx, g.ry),
-        EId::Circle => circle_path(g.cx, g.cy, g.r),
-        EId::Ellipse => ellipse_path(g.cx, g.cy, g.rx, g.ry),
-        EId::Line => line_path(g.x1, g.y1, g.x2, g.y2),
-        _ => None,
-    }
-}
-
-/// Reports whether a shape produces a renderable (non-degenerate) snapshot.
-fn is_shape_renderable(element_tag: EId, g: &ShapeGeometry) -> bool {
-    match element_tag {
-        EId::Rect => g.width.is_valid_length() && g.height.is_valid_length(),
-        EId::Circle => g.r.is_valid_length(),
-        EId::Ellipse => g.rx.is_valid_length() && g.ry.is_valid_length(),
-        EId::Line => true,
-        _ => false,
-    }
-}
-
 /// Reports whether an attribute must be non-negative to bake a real shape.
 fn is_non_negative_attribute(attribute_name: &str) -> bool {
     matches!(
         attribute_name,
         "width" | "height" | "r" | "rx" | "ry" | "fr"
     )
-}
-
-/// Reports whether every keyframe shares one verb sequence.
-fn verbs_match(keyframes: &[RawKeyframe]) -> bool {
-    let mut iter = keyframes.iter();
-    let Some(first) = iter.next() else {
-        return true;
-    };
-    iter.all(|k| k.path.verbs() == first.path.verbs())
-}
-
-/// Bakes the per-iteration accumulation offset for `accumulate=sum`.
-///
-/// Single-attribute tracks bake `end - base` point-wise; `d`/`points` cannot
-/// accumulate and are dropped with a warning.
-fn bake_accumulation(
-    keyframes: &[RawKeyframe],
-    accumulate: Accumulate,
-    multi_param: bool,
-    interpolable: bool,
-    origin: Option<&Path>,
-) -> Option<Arc<Path>> {
-    if !matches!(accumulate, Accumulate::Sum) {
-        return None;
-    }
-
-    if multi_param {
-        log::warn!("Unsupported accumulate value; ignoring.");
-        return None;
-    }
-
-    if !interpolable || keyframes.len() < 2 {
-        return None;
-    }
-
-    let last = keyframes.last()?;
-    subtract_paths(origin?, &last.path).map(Arc::new)
-}
-
-/// Builds `end - base` point-wise, preserving the shared verb sequence.
-fn subtract_paths(base: &Path, end: &Path) -> Option<Path> {
-    let mut builder = PathBuilder::new();
-    let mut base_iter = base.segments();
-    let mut end_iter = end.segments();
-
-    loop {
-        match (base_iter.next(), end_iter.next()) {
-            (Some(b), Some(e)) => match (b, e) {
-                (PathSegment::MoveTo(bp), PathSegment::MoveTo(ep)) => {
-                    builder.move_to(ep.x - bp.x, ep.y - bp.y);
-                }
-                (PathSegment::LineTo(bp), PathSegment::LineTo(ep)) => {
-                    builder.line_to(ep.x - bp.x, ep.y - bp.y);
-                }
-                (PathSegment::QuadTo(bp1, bp), PathSegment::QuadTo(ep1, ep)) => {
-                    builder.quad_to(ep1.x - bp1.x, ep1.y - bp1.y, ep.x - bp.x, ep.y - bp.y);
-                }
-                (PathSegment::CubicTo(bp1, bp2, bp), PathSegment::CubicTo(ep1, ep2, ep)) => {
-                    builder.cubic_to(
-                        ep1.x - bp1.x,
-                        ep1.y - bp1.y,
-                        ep2.x - bp2.x,
-                        ep2.y - bp2.y,
-                        ep.x - bp.x,
-                        ep.y - bp.y,
-                    );
-                }
-                (PathSegment::Close, PathSegment::Close) => builder.close(),
-                _ => return None,
-            },
-            (None, None) => break,
-            _ => return None,
-        }
-    }
-
-    builder.finish()
-}
-
-/// Parses absolute path data into a path, mirroring `shapes::convert_path`.
-fn parse_path_data(data: &str) -> Option<(Path, bool)> {
-    let mut builder = PathBuilder::new();
-    let mut last_move = None;
-    let mut renderable = false;
-    for segment in svgtypes::SimplifyingPathParser::from(data) {
-        let Ok(segment) = segment else { break };
-        match segment {
-            svgtypes::SimplePathSegment::MoveTo { x, y } => {
-                let point = (x as f32, y as f32);
-                builder.move_to(point.0, point.1);
-                last_move = Some(point);
-            }
-            svgtypes::SimplePathSegment::LineTo { x, y } => {
-                builder.line_to(x as f32, y as f32);
-                renderable = true;
-            }
-            svgtypes::SimplePathSegment::Quadratic { x1, y1, x, y } => {
-                builder.quad_to(x1 as f32, y1 as f32, x as f32, y as f32);
-                renderable = true;
-            }
-            svgtypes::SimplePathSegment::CurveTo {
-                x1,
-                y1,
-                x2,
-                y2,
-                x,
-                y,
-            } => {
-                builder.cubic_to(
-                    x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32,
-                );
-                renderable = true;
-            }
-            svgtypes::SimplePathSegment::ClosePath => builder.close(),
-        }
-    }
-    if !renderable {
-        let (x, y) = last_move?;
-        builder.line_to(x, y);
-    }
-    builder.finish().map(|path| (path, renderable))
-}
-
-fn warn_invalid_geometry_value(value: impl std::fmt::Display) {
-    log::warn!("Invalid geometry animation value: '{}'.", value);
 }
 
 #[cfg(test)]
