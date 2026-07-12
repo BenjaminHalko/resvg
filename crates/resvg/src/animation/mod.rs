@@ -9,6 +9,7 @@
 //! normalized iteration progress and [`easing`] shapes that progress.
 
 pub(crate) mod easing;
+pub(crate) mod interpolate;
 pub(crate) mod timing;
 
 #[cfg(test)]
