@@ -816,3 +816,51 @@ fn css_variables_are_not_supported_warns() {
             .any(|warning| warning == "CSS variables are not supported.")
     );
 }
+
+#[test]
+fn static_tree_has_no_animations() {
+    let tree = parse("<rect width='10' height='10' fill='green'/>");
+    assert!(!tree.has_animations());
+    assert_eq!(tree.animation_duration(), None);
+}
+
+#[test]
+fn animated_node_reports_animations() {
+    let tree = parse(
+        "<rect width='10' height='10'><animate attributeName='opacity' from='0' to='1' dur='3s'/></rect>",
+    );
+    assert!(tree.has_animations());
+    assert_eq!(tree.animation_duration(), Some(3.0));
+}
+
+#[test]
+fn animation_duration_takes_the_longest_loop() {
+    let tree = parse(
+        "<rect width='10' height='10'>\
+            <animate attributeName='opacity' from='0' to='1' dur='2s'/>\
+            <animate attributeName='x' from='0' to='5' begin='1s' dur='4s'/>\
+        </rect>",
+    );
+    // The second track begins at 1s and runs for 4s, ending at 5s.
+    assert_eq!(tree.animation_duration(), Some(5.0));
+}
+
+#[test]
+fn indefinite_repeat_reports_a_single_loop() {
+    let tree = parse(
+        "<rect width='10' height='10'><animate attributeName='opacity' from='0' to='1' dur='2s' repeatCount='indefinite'/></rect>",
+    );
+    assert!(tree.has_animations());
+    // An infinite animation reports the length of one loop, not infinity.
+    assert_eq!(tree.animation_duration(), Some(2.0));
+}
+
+#[test]
+fn css_animation_duration_includes_delay() {
+    let tree = parse(
+        "<style>@keyframes fade { from { opacity: 0; } to { opacity: 1; } } #box { animation: fade 3s linear 1s infinite; }</style><rect id='box' width='10' height='10'/>",
+    );
+    assert!(tree.has_animations());
+    // 1s delay + 3s duration; infinite iteration collapses to one loop.
+    assert_eq!(tree.animation_duration(), Some(4.0));
+}

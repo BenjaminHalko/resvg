@@ -1735,6 +1735,105 @@ impl Tree {
         self.view_box_animation.as_deref()
     }
 
+    /// Whether the tree contains any animation.
+    ///
+    /// Covers node, gradient, gradient-stop, and root `viewBox` animations.
+    #[cfg(feature = "animation")]
+    pub fn has_animations(&self) -> bool {
+        if self.view_box_animation.is_some() {
+            return true;
+        }
+        if self
+            .linear_gradients
+            .iter()
+            .any(|gradient| gradient.base.animation.is_some())
+            || self
+                .radial_gradients
+                .iter()
+                .any(|gradient| gradient.base.animation.is_some())
+        {
+            return true;
+        }
+        let mut found = false;
+        self.walk_node_animations(&mut |node_animation| {
+            found = found || !node_animation.animations().is_empty();
+        });
+        found
+    }
+
+    /// The end time of the tree's longest first loop, in seconds.
+    ///
+    /// Returns `None` when the tree has no animation. Repeats and infinite
+    /// iterations collapse to a single loop, so an indefinitely repeating
+    /// animation reports the length of one cycle.
+    #[cfg(feature = "animation")]
+    pub fn animation_duration(&self) -> Option<f32> {
+        let mut duration: Option<f32> = None;
+        let mut consider = |end: Option<f32>| {
+            if let Some(end) = end {
+                duration = Some(duration.map_or(end, |current: f32| current.max(end)));
+            }
+        };
+
+        if let Some(view_box) = self.view_box_animation.as_deref() {
+            consider(view_box.timing().one_loop_end());
+        }
+        let mut consider_gradient = |gradient: &animation::GradientAnimation| {
+            for animation in gradient.animations() {
+                consider(animation.one_loop_end());
+            }
+            for stop in gradient.source_stops() {
+                for animation in stop.animations() {
+                    consider(animation.one_loop_end());
+                }
+            }
+        };
+        for gradient in &self.linear_gradients {
+            if let Some(gradient_animation) = gradient.base.animation.as_deref() {
+                consider_gradient(gradient_animation);
+            }
+        }
+        for gradient in &self.radial_gradients {
+            if let Some(gradient_animation) = gradient.base.animation.as_deref() {
+                consider_gradient(gradient_animation);
+            }
+        }
+        self.walk_node_animations(&mut |node_animation| {
+            for animation in node_animation.animations() {
+                consider(animation.one_loop_end());
+            }
+        });
+        duration
+    }
+
+    /// Visits every node's animation data across the tree and its subroots.
+    #[cfg(feature = "animation")]
+    fn walk_node_animations(&self, f: &mut dyn FnMut(&animation::NodeAnimation)) {
+        fn visit(group: &Group, f: &mut dyn FnMut(&animation::NodeAnimation)) {
+            if let Some(node_animation) = group.animation() {
+                f(node_animation);
+            }
+            for node in group.children() {
+                match node {
+                    Node::Group(child) => visit(child, f),
+                    Node::Path(path) => {
+                        if let Some(node_animation) = path.animation() {
+                            f(node_animation);
+                        }
+                    }
+                    Node::Image(image) => {
+                        if let Some(node_animation) = image.animation() {
+                            f(node_animation);
+                        }
+                    }
+                    Node::Text(_) => {}
+                }
+                node.subroots(|subroot| visit(subroot, f));
+            }
+        }
+        visit(&self.root, f);
+    }
+
     pub(crate) fn collect_paint_servers(&mut self) {
         loop_over_paint_servers(&self.root, &mut |paint| match paint {
             Paint::Color(_) => {}

@@ -452,6 +452,28 @@ pub enum Timing {
     Css(CssTiming),
 }
 
+impl Timing {
+    /// The end time of the first loop, in seconds, or `None` when the simple
+    /// duration is indefinite. Repeats collapse to a single loop.
+    pub(crate) fn one_loop_end(&self) -> Option<f32> {
+        match self {
+            Timing::Smil(smil) => {
+                let simple = match smil.dur {
+                    Dur::Seconds(seconds) if seconds > 0.0 => seconds,
+                    _ => return None,
+                };
+                let begin = smil
+                    .intervals
+                    .iter()
+                    .map(|interval| interval.begin)
+                    .fold(f32::INFINITY, f32::min);
+                begin.is_finite().then_some(begin + simple)
+            }
+            Timing::Css(css) => Some(css.delay.max(0.0) + css.duration),
+        }
+    }
+}
+
 /// A SMIL transform track.
 #[derive(Clone, Debug)]
 pub enum TransformTrack {
@@ -838,6 +860,15 @@ impl Animation {
     /// Whether this animation is suppressed by an `!important` static declaration.
     pub fn suppressed_by_important(&self) -> bool {
         self.suppressed_by_important
+    }
+
+    /// The end time of the animation's first loop, in seconds.
+    ///
+    /// Repeats and infinite iterations collapse to a single loop, so an
+    /// indefinitely repeating animation reports the length of one cycle. An
+    /// animation with an indefinite simple duration contributes `None`.
+    pub(crate) fn one_loop_end(&self) -> Option<f32> {
+        self.timing.one_loop_end()
     }
 }
 
