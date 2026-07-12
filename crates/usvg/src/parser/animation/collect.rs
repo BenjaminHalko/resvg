@@ -23,9 +23,20 @@ pub(crate) fn collect_node_animations(
     state: &converter::State,
     cache: &mut converter::Cache,
 ) -> Vec<Arc<Animation>> {
+    if has_remote_text_animation(state.all_animations) {
+        log::warn!("Animation of text elements is not supported.");
+    }
     let mut animations = collect_animations(node, state.all_animations, state, cache);
     animations.extend(super::css::build_css_animations(node, node.document()));
     animations
+}
+
+fn has_remote_text_animation(all_animations: &[(NodeId, SvgNode)]) -> bool {
+    all_animations.iter().any(|(_, animation)| {
+        animation
+            .try_attribute::<SvgNode>(AId::Href)
+            .is_some_and(|target| target.tag_name() == Some(EId::Text))
+    })
 }
 
 pub(crate) fn collect_animations(

@@ -218,6 +218,25 @@ fn text_animation_warns_without_attachment() {
 }
 
 #[test]
+fn remote_text_animation_warns_without_attachment() {
+    let _guard = WARN_GUARD.lock().unwrap();
+    init_capture();
+    WARNINGS.get().unwrap().lock().unwrap().clear();
+    let _tree = parse(
+        "<defs><text id='text' x='0' y='10'>text</text></defs><animate xlink:href='#text' attributeName='x' to='10' dur='1s' xmlns:xlink='http://www.w3.org/1999/xlink'/><rect width='4' height='4'/>",
+    );
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "Animation of text elements is not supported.")
+    );
+}
+
+#[test]
 fn gradient_shared_by_two_shapes_keeps_tracks() {
     let tree = parse(
         "<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='1s'/></stop><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/><rect width='4' height='4' fill='url(#g)'/>",
