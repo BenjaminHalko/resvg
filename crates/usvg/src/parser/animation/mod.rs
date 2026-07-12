@@ -6,6 +6,7 @@
 pub(crate) mod css;
 pub(crate) mod geom;
 pub(crate) mod motion;
+pub(crate) mod shorthand;
 pub(crate) mod timing;
 pub(crate) mod values;
 pub(crate) mod collect;

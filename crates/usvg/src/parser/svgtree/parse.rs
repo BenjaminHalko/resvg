@@ -351,7 +351,10 @@ pub(crate) fn parse_svg_element<'input>(
         }
     };
 
-    let mut write_declaration = |declaration: &Declaration| {
+    let mut write_declaration = |declaration: &Declaration, from_style_attr: bool| {
+        #[cfg(not(feature = "animation"))]
+        let _ = from_style_attr;
+
         #[cfg(not(feature = "animation"))]
         if AId::from_str(declaration.name).is_some_and(|aid| aid.is_animation()) {
             return;
@@ -360,6 +363,53 @@ pub(crate) fn parse_svg_element<'input>(
         // TODO: perform XML attribute normalization
         let imp = declaration.important;
         let val = declaration.value;
+
+        // CSS animation properties are resolved through the cascade only when the
+        // `animation` feature is enabled. They are not presentation attributes, so
+        // they must be handled before the generic presentation-attribute path.
+        #[cfg(feature = "animation")]
+        if let Some(aid) = AId::from_str(declaration.name) {
+            if is_css_animation_property(aid) {
+                if from_style_attr {
+                    log::warn!("CSS animations in the style attribute are not supported.");
+                } else if aid == AId::Animation {
+                    match crate::parser::animation::shorthand::expand_animation_shorthand(val) {
+                        Some(longhands) => {
+                            insert_attribute(AId::AnimationName, &longhands.name, imp);
+                            insert_attribute(AId::AnimationDuration, &longhands.duration, imp);
+                            insert_attribute(
+                                AId::AnimationTimingFunction,
+                                &longhands.timing_function,
+                                imp,
+                            );
+                            insert_attribute(AId::AnimationDelay, &longhands.delay, imp);
+                            insert_attribute(
+                                AId::AnimationIterationCount,
+                                &longhands.iteration_count,
+                                imp,
+                            );
+                            insert_attribute(AId::AnimationDirection, &longhands.direction, imp);
+                            insert_attribute(AId::AnimationFillMode, &longhands.fill_mode, imp);
+                            insert_attribute(AId::AnimationPlayState, &longhands.play_state, imp);
+                        }
+                        None => {
+                            log::warn!("Invalid animation shorthand: '{}'.", val);
+                        }
+                    }
+                } else {
+                    insert_attribute(aid, val, imp);
+                }
+                return;
+            }
+
+            // `transform-box` participates in transform resolution for animated
+            // elements. It is captured under the feature without being promoted to
+            // a presentation attribute, which would change feature-off behavior.
+            if aid == AId::TransformBox {
+                insert_attribute(aid, val, imp);
+                return;
+            }
+        }
 
         if declaration.name == "marker" {
             insert_attribute(AId::MarkerStart, val, imp);
@@ -415,7 +465,7 @@ pub(crate) fn parse_svg_element<'input>(
     for rule in &style_sheet.rules {
         if rule.selector.matches(&XmlNode(xml_node)) {
             for declaration in &rule.declarations {
-                write_declaration(declaration);
+                write_declaration(declaration, false);
             }
         }
     }
@@ -423,7 +473,7 @@ pub(crate) fn parse_svg_element<'input>(
     // Split a `style` attribute.
     if let Some(value) = xml_node.attribute("style") {
         for declaration in simplecss::DeclarationTokenizer::from(value) {
-            write_declaration(&declaration);
+            write_declaration(&declaration, true);
         }
     }
 
@@ -440,6 +490,24 @@ pub(crate) fn parse_svg_element<'input>(
     );
 
     Ok(node_id)
+}
+
+/// Checks whether `aid` is one of the CSS animation properties resolved through
+/// the cascade (as opposed to the SMIL animation attributes).
+#[cfg(feature = "animation")]
+fn is_css_animation_property(aid: AId) -> bool {
+    matches!(
+        aid,
+        AId::Animation
+            | AId::AnimationName
+            | AId::AnimationDuration
+            | AId::AnimationDelay
+            | AId::AnimationIterationCount
+            | AId::AnimationDirection
+            | AId::AnimationFillMode
+            | AId::AnimationTimingFunction
+            | AId::AnimationPlayState
+    )
 }
 
 fn append_attribute<'input>(
@@ -944,5 +1012,184 @@ mod tests {
         let doc = Document::parse_tree(&xml, None).unwrap();
         let rect = doc.root_element().first_element_child().unwrap();
         assert!(rect.has_attribute(AId::TransformOrigin));
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn animation_shorthand_from_stylesheet_expands_longhands() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { animation: move 4s steps(4, jump-end) both; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationName), Some("move"));
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("4s"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationTimingFunction),
+            Some("steps(4, jump-end)")
+        );
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationFillMode), Some("both"));
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDelay), Some("0s"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationIterationCount),
+            Some("1")
+        );
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationDirection),
+            Some("normal")
+        );
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationPlayState),
+            Some("running")
+        );
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn animation_multi_list_from_stylesheet_is_index_matched() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { animation: spin 1s linear infinite, fade 2s ease-out; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationName),
+            Some("spin, fade")
+        );
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationDuration),
+            Some("1s, 2s")
+        );
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationTimingFunction),
+            Some("linear, ease-out")
+        );
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationIterationCount),
+            Some("infinite, 1")
+        );
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn animation_longhand_overrides_shorthand() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { animation: move 4s; animation-duration: 2s; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationName), Some("move"));
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("2s"));
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn animation_shorthand_resets_earlier_longhand() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { animation-duration: 2s; animation: move 4s; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("4s"));
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn animation_play_state_longhand_is_captured() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { animation-play-state: paused; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationPlayState),
+            Some("paused")
+        );
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn animation_duration_only_has_no_name() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { animation: 4s; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationName), Some("none"));
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationDuration), Some("4s"));
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn malformed_animation_shorthand_is_dropped() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { animation: 4s 3s 2s move; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert!(!rect.has_attribute(AId::AnimationName));
+        assert!(!rect.has_attribute(AId::AnimationDuration));
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn inline_style_animation_is_dropped() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <rect id='r' style='animation: move 4s'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert!(!rect.has_attribute(AId::Animation));
+        assert!(!rect.has_attribute(AId::AnimationName));
+        assert!(!rect.has_attribute(AId::AnimationDuration));
+    }
+
+    #[cfg(feature = "animation")]
+    #[test]
+    fn transform_box_from_stylesheet_is_captured() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <style>#r { transform-box: fill-box; }</style>\
+             <rect id='r'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.element_by_id("r").unwrap();
+
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::TransformBox),
+            Some("fill-box")
+        );
     }
 }
