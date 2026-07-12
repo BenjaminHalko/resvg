@@ -415,9 +415,10 @@ pub(crate) fn parse_smil_values(
                 false,
                 None,
                 base_value.boolean(),
-                |s| Some(parse_display(s)),
+                |s| Some(parse_display(s, base_value.boolean().unwrap_or(true))),
                 |a, _| *a,
             )?;
+            let keyframes = discrete_from_to_midpoint(keyframes, &forms);
             Some(SmilValues {
                 kind: AnimationKind::Display(Track::new(keyframes)),
                 additive,
@@ -434,9 +435,20 @@ pub(crate) fn parse_smil_values(
                 false,
                 None,
                 base_value.visibility(),
-                |s| warned(parse_visibility(s), s),
+                |s| {
+                    warned(
+                        parse_visibility(
+                            s,
+                            base_value
+                                .visibility()
+                                .unwrap_or(AnimationVisibility::Visible),
+                        ),
+                        s,
+                    )
+                },
                 |a, _| *a,
             )?;
+            let keyframes = discrete_from_to_midpoint(keyframes, &forms);
             Some(SmilValues {
                 kind: AnimationKind::Visibility(Track::new(keyframes)),
                 additive,
@@ -812,13 +824,35 @@ fn parse_fill_rule(value: &str) -> Option<FillRule> {
     }
 }
 
-fn parse_display(value: &str) -> bool {
-    value != "none"
+fn parse_display(value: &str, inherited: bool) -> bool {
+    match value {
+        "none" => false,
+        "inherit" => inherited,
+        _ => true,
+    }
 }
 
-fn parse_visibility(value: &str) -> Option<AnimationVisibility> {
+/// Moves a discrete `from`/`to` transition to the middle of its active interval.
+fn discrete_from_to_midpoint<T: Clone>(
+    mut keyframes: Vec<Keyframe<T>>,
+    forms: &Forms<'_>,
+) -> Vec<Keyframe<T>> {
+    if forms.values.is_none() && forms.from.is_some() && forms.to.is_some() && keyframes.len() == 2
+    {
+        let second = &keyframes[1];
+        keyframes[1] = Keyframe::new(
+            NormalizedF32::new_clamped(0.5),
+            second.value().clone(),
+            second.timing_function().cloned(),
+        );
+    }
+    keyframes
+}
+
+fn parse_visibility(value: &str, inherited: AnimationVisibility) -> Option<AnimationVisibility> {
     match value {
         "visible" => Some(AnimationVisibility::Visible),
+        "inherit" => Some(inherited),
         "hidden" => Some(AnimationVisibility::Hidden),
         "collapse" => Some(AnimationVisibility::Collapse),
         _ => None,
@@ -1154,6 +1188,135 @@ mod tests {
                 assert_eq!(*track.keyframes()[1].value(), color("blue"));
             }
             other => panic!("expected fill, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inherited_visibility_values_stay_visible() {
+        let result = parse_smil_values(
+            "visibility",
+            Some("inherit;hidden;inherit"),
+            None,
+            None,
+            None,
+            REPLACE,
+            NONE,
+            LINEAR,
+            None,
+            &BaseValue::Visibility(AnimationVisibility::Visible),
+        )
+        .unwrap();
+        match &result.kind {
+            AnimationKind::Visibility(track) => {
+                assert_eq!(track.keyframes().len(), 3);
+                assert!(matches!(
+                    track.keyframes()[0].value(),
+                    AnimationVisibility::Visible
+                ));
+                assert!(matches!(
+                    track.keyframes()[1].value(),
+                    AnimationVisibility::Hidden
+                ));
+                assert!(matches!(
+                    track.keyframes()[2].value(),
+                    AnimationVisibility::Visible
+                ));
+            }
+            other => panic!("expected visibility, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inherited_display_values_stay_shown() {
+        let result = parse_smil_values(
+            "display",
+            Some("inherit;none;inherit"),
+            None,
+            None,
+            None,
+            REPLACE,
+            NONE,
+            LINEAR,
+            None,
+            &BaseValue::Boolean(true),
+        )
+        .unwrap();
+        match &result.kind {
+            AnimationKind::Display(track) => {
+                assert_eq!(track.keyframes().len(), 3);
+                assert!(*track.keyframes()[0].value());
+                assert!(!*track.keyframes()[1].value());
+                assert!(*track.keyframes()[2].value());
+            }
+            other => panic!("expected display, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inherited_visibility_value_keeps_hidden_base() {
+        let result = parse_smil_values(
+            "visibility",
+            Some("inherit"),
+            None,
+            None,
+            None,
+            REPLACE,
+            NONE,
+            LINEAR,
+            None,
+            &BaseValue::Visibility(AnimationVisibility::Hidden),
+        )
+        .unwrap();
+        match &result.kind {
+            AnimationKind::Visibility(track) => assert!(matches!(
+                track.keyframes()[0].value(),
+                AnimationVisibility::Hidden
+            )),
+            other => panic!("expected visibility, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inherited_display_value_keeps_hidden_base() {
+        let result = parse_smil_values(
+            "display",
+            Some("inherit"),
+            None,
+            None,
+            None,
+            REPLACE,
+            NONE,
+            LINEAR,
+            None,
+            &BaseValue::Boolean(false),
+        )
+        .unwrap();
+        match &result.kind {
+            AnimationKind::Display(track) => assert!(!*track.keyframes()[0].value()),
+            other => panic!("expected display, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn discrete_display_from_to_switches_halfway() {
+        let result = parse_smil_values(
+            "display",
+            None,
+            Some("none"),
+            Some("inline"),
+            None,
+            REPLACE,
+            NONE,
+            LINEAR,
+            None,
+            &BaseValue::Boolean(false),
+        )
+        .unwrap();
+        match &result.kind {
+            AnimationKind::Display(track) => {
+                assert_eq!(track.keyframes()[1].offset().get(), 0.5);
+            }
+            other => panic!("expected display, got {other:?}"),
         }
     }
 

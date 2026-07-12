@@ -617,9 +617,7 @@ pub(crate) fn convert_element(node: SvgNode, state: &State, cache: &mut Cache, p
 
     if !node.is_visible_element(state.opt) {
         #[cfg(feature = "animation")]
-        if !(node.attribute(AId::Display) == Some("none")
-            && super::animation::collect::has_display_or_visibility_animation(node, state))
-        {
+        if !super::animation::collect::can_be_revealed_by_display_animation(node, state) {
             return;
         }
         #[cfg(not(feature = "animation"))]
@@ -729,9 +727,7 @@ pub(crate) fn convert_clip_path_elements(
 
         if !node.is_visible_element(state.opt) {
             #[cfg(feature = "animation")]
-            if !(node.attribute(AId::Display) == Some("none")
-                && super::animation::collect::has_display_or_visibility_animation(node, state))
-            {
+            if !super::animation::collect::can_be_revealed_by_display_animation(node, state) {
                 continue;
             }
             #[cfg(not(feature = "animation"))]

@@ -141,7 +141,7 @@ pub(crate) fn interpolate_track_with_timing(
                 .map(SampledValue::Display)
         }
         AnimationKind::Visibility(track) => {
-            sample_discrete(track.keyframes(), easing, timing_function, progress)
+            sample_discrete_before_boundary(track.keyframes(), easing, timing_function, progress)
                 .map(SampledValue::Visibility)
         }
         AnimationKind::Path(track) => sample_path(track, easing, timing_function, progress)
@@ -449,6 +449,21 @@ fn sample_discrete<T: Copy>(
 ) -> Option<T> {
     let (lo, _, _) = locate_track(keyframes, easing, timing_function, progress, None)?;
     Some(*keyframes[lo].value())
+}
+
+/// Samples a visibility track with its source value retained at a keyframe boundary.
+fn sample_discrete_before_boundary<T: Copy>(
+    keyframes: &[Keyframe<T>],
+    easing: &Easing,
+    timing_function: Option<&TimingFunction>,
+    progress: f32,
+) -> Option<T> {
+    let progress = if progress < 1.0 {
+        progress.next_down()
+    } else {
+        progress
+    };
+    sample_discrete(keyframes, easing, timing_function, progress)
 }
 
 /// Samples a `viewBox` track by lerping each rect component.
@@ -1238,6 +1253,24 @@ mod tests {
             30.0,
             1e-4,
         );
+    }
+
+    #[test]
+    fn visibility_holds_source_value_at_discrete_boundary() {
+        let kind = AnimationKind::Visibility(Track::new(vec![
+            Keyframe::new(n(0.0), usvg::AnimationVisibility::Visible, None),
+            Keyframe::new(n(0.5), usvg::AnimationVisibility::Hidden, None),
+        ]));
+        let easing = discrete();
+
+        assert!(matches!(
+            interpolate_track(&kind, &easing, 0.5),
+            Some(SampledValue::Visibility(usvg::AnimationVisibility::Visible))
+        ));
+        assert!(matches!(
+            interpolate_track(&kind, &easing, 0.5001),
+            Some(SampledValue::Visibility(usvg::AnimationVisibility::Hidden))
+        ));
     }
 
     #[test]

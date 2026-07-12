@@ -127,6 +127,22 @@ pub(crate) fn has_display_or_visibility_animation(node: SvgNode, state: &convert
         })
 }
 
+pub(crate) fn can_be_revealed_by_display_animation(
+    node: SvgNode,
+    state: &converter::State,
+) -> bool {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if candidate.attribute(AId::Display) == Some("none")
+            && has_display_or_visibility_animation(candidate, state)
+        {
+            return true;
+        }
+        current = candidate.parent();
+    }
+    false
+}
+
 pub(crate) fn has_paint_animation(node: SvgNode, state: &converter::State, names: &[&str]) -> bool {
     animation_nodes(node, state.all_animations)
         .into_iter()
@@ -502,9 +518,17 @@ fn base_value(node: SvgNode, name: &str, state: &converter::State) -> BaseValue 
             BaseValue::Linejoin(node.find_attribute(AId::StrokeLinejoin).unwrap_or_default())
         }
         "fill-rule" => BaseValue::FillRule(node.find_attribute(AId::FillRule).unwrap_or_default()),
-        "display" => BaseValue::Boolean(node.attribute(AId::Display) != Some("none")),
+        "display" => BaseValue::Boolean(
+            node.parent()
+                .and_then(|parent| parent.find_attribute::<&str>(AId::Display))
+                != Some("none"),
+        ),
         "visibility" => BaseValue::Visibility(
-            match node.find_attribute(AId::Visibility).unwrap_or_default() {
+            match node
+                .parent()
+                .and_then(|parent| parent.find_attribute(AId::Visibility))
+                .unwrap_or_default()
+            {
                 Visibility::Visible => AnimationVisibility::Visible,
                 Visibility::Hidden => AnimationVisibility::Hidden,
                 Visibility::Collapse => AnimationVisibility::Collapse,

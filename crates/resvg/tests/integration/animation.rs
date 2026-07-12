@@ -138,6 +138,23 @@ fn animated_opacity_forces_isolation() {
 }
 
 #[test]
+fn inherited_display_tracks_reveal_nested_content() {
+    let svg = r#"<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+        <g display="none">
+            <g display="inherit"><rect width="20" height="20" fill="blue"/></g>
+            <animate attributeName="display" from="inline" to="none" begin="3s" dur="3s"/>
+        </g>
+        <g display="none">
+            <g display="inherit"><rect x="30" width="20" height="20" fill="yellow"/></g>
+            <animate attributeName="display" from="none" to="inherit" begin="4s" dur="3s"/>
+        </g>
+    </svg>"#;
+
+    assert!(alpha_at(&render_at_pixmap(svg, 4.0), 10, 10) > 200);
+    assert!(alpha_at(&render_at_pixmap(svg, 6.0), 40, 10) > 200);
+}
+
+#[test]
 fn animated_dashoffset_toggles_pixel() {
     // A dashed stroke with an animated `stroke-dashoffset`: a pixel that sits in
     // a gap at t=0 is covered at t=mid (a half-period shift inverts coverage).
