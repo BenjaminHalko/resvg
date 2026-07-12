@@ -181,12 +181,24 @@ fn render_group(
 
     if !group.filters().is_empty() {
         for filter in group.filters() {
-            crate::filter::apply(filter, transform, &mut sub_pixmap);
+            crate::filter::apply(
+                filter,
+                transform,
+                &mut sub_pixmap,
+                #[cfg(feature = "animation")]
+                ctx.time,
+            );
         }
     }
 
     if let Some(clip_path) = group.clip_path() {
-        crate::clip::apply(clip_path, transform, &mut sub_pixmap);
+        crate::clip::apply(
+            clip_path,
+            transform,
+            &mut sub_pixmap,
+            #[cfg(feature = "animation")]
+            ctx.time,
+        );
     }
 
     if let Some(mask) = group.mask() {

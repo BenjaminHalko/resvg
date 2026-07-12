@@ -336,8 +336,9 @@ pub fn apply(
     filter: &usvg::filter::Filter,
     ts: tiny_skia::Transform,
     source: &mut tiny_skia::Pixmap,
+    #[cfg(feature = "animation")] time: Option<f32>,
 ) {
-    let result = apply_inner(filter, ts, source);
+    let result = apply_inner(filter, ts, source, #[cfg(feature = "animation")] time);
     let result = result.and_then(|image| apply_to_canvas(image, source));
 
     // Clear on error.
@@ -358,6 +359,7 @@ fn apply_inner(
     filter: &usvg::filter::Filter,
     ts: usvg::Transform,
     source: &mut tiny_skia::Pixmap,
+    #[cfg(feature = "animation")] time: Option<f32>,
 ) -> Result<Image, Error> {
     let region = filter
         .rect()
@@ -414,7 +416,14 @@ fn apply_inner(
                 let input = get_input(fe.input(), region, source, &results)?;
                 apply_tile(input, region)
             }
-            usvg::filter::Kind::Image(fe) => apply_image(fe, region, subregion, ts),
+            usvg::filter::Kind::Image(fe) => apply_image(
+                fe,
+                region,
+                subregion,
+                ts,
+                #[cfg(feature = "animation")]
+                time,
+            ),
             usvg::filter::Kind::ComponentTransfer(fe) => {
                 let input = get_input(fe.input(), region, source, &results)?;
                 apply_component_transfer(fe, cs, input)
@@ -856,6 +865,7 @@ fn apply_image(
     region: IntRect,
     subregion: IntRect,
     ts: usvg::Transform,
+    #[cfg(feature = "animation")] time: Option<f32>,
 ) -> Result<Image, Error> {
     let mut pixmap = tiny_skia::Pixmap::try_create(region.width(), region.height())?;
 
@@ -872,7 +882,7 @@ fn apply_image(
     let ctx = crate::render::Context {
         max_bbox: tiny_skia::IntRect::from_xywh(0, 0, region.width(), region.height()).unwrap(),
         #[cfg(feature = "animation")]
-        time: None,
+        time,
     };
 
     crate::render::render_nodes(fe.root(), &ctx, transform, &mut pixmap.as_mut());

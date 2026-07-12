@@ -431,3 +431,113 @@ fn zero_static_image_reveals_under_render_at() {
     let width = mid.2 - mid.0 + 1;
     assert!(width > 10, "the interpolated width renders, got {width}");
 }
+
+#[test]
+fn animated_mask_content_shifts_coverage() {
+    // A mask whose white band translates right: the revealed region of the green
+    // fill moves with it, proving the mask subtree samples at the query time.
+    let svg = r#"<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <mask id="m">
+                <rect x="0" y="0" width="20" height="60" fill="white">
+                    <animateTransform attributeName="transform" type="translate"
+                        from="0 0" to="40 0" begin="0s" dur="4s" fill="freeze"/>
+                </rect>
+            </mask>
+        </defs>
+        <rect x="0" y="0" width="60" height="60" fill="green" mask="url(#m)"/>
+    </svg>"#;
+    let t0 = render_at_pixmap(svg, 0.0);
+    let mid = render_at_pixmap(svg, 2.0);
+    assert_eq!(alpha_at(&t0, 30, 30), 0, "the right band is masked out at t=0");
+    assert!(
+        alpha_at(&mid, 30, 30) > 200,
+        "the mask band translates to reveal the right region"
+    );
+    let b0 = nonzero_bbox(&t0).expect("content at t=0");
+    let mid_bbox = nonzero_bbox(&mid).expect("content at t=mid");
+    let shift = mid_bbox.0 as i32 - b0.0 as i32;
+    assert!((shift - 20).abs() <= 2, "mask coverage shifts ~+20px, got {shift}");
+}
+
+#[test]
+fn animated_clip_path_content_shifts_coverage() {
+    // A `clipPath` child with an `animateTransform`: the clipped region of the
+    // green fill translates right, proving `clip.rs` samples the subtree.
+    let svg = r#"<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <clipPath id="c">
+                <rect x="0" y="0" width="20" height="60">
+                    <animateTransform attributeName="transform" type="translate"
+                        from="0 0" to="40 0" begin="0s" dur="4s" fill="freeze"/>
+                </rect>
+            </clipPath>
+        </defs>
+        <rect x="0" y="0" width="60" height="60" fill="green" clip-path="url(#c)"/>
+    </svg>"#;
+    let t0 = render_at_pixmap(svg, 0.0);
+    let mid = render_at_pixmap(svg, 2.0);
+    assert_eq!(alpha_at(&t0, 30, 30), 0, "the right band is clipped out at t=0");
+    assert!(
+        alpha_at(&mid, 30, 30) > 200,
+        "the clip shape translates to reveal the right region"
+    );
+    let b0 = nonzero_bbox(&t0).expect("content at t=0");
+    let mid_bbox = nonzero_bbox(&mid).expect("content at t=mid");
+    let shift = mid_bbox.0 as i32 - b0.0 as i32;
+    assert!((shift - 20).abs() <= 2, "clip coverage shifts ~+20px, got {shift}");
+}
+
+#[test]
+fn animated_pattern_content_shifts_coverage() {
+    // A pattern tile whose red band translates right: the fill it paints moves
+    // with it, proving the pattern subtree samples at the query time.
+    let svg = r#"<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <pattern id="p" width="60" height="60" patternUnits="userSpaceOnUse">
+                <rect x="0" y="0" width="20" height="60" fill="red">
+                    <animateTransform attributeName="transform" type="translate"
+                        from="0 0" to="40 0" begin="0s" dur="4s" fill="freeze"/>
+                </rect>
+            </pattern>
+        </defs>
+        <rect x="0" y="0" width="60" height="60" fill="url(#p)"/>
+    </svg>"#;
+    let t0 = render_at_pixmap(svg, 0.0);
+    let mid = render_at_pixmap(svg, 2.0);
+    assert_eq!(alpha_at(&t0, 30, 30), 0, "the pattern paints only the left band at t=0");
+    assert!(
+        alpha_at(&mid, 30, 30) > 200,
+        "the pattern content translates to paint the right region"
+    );
+    let b0 = nonzero_bbox(&t0).expect("content at t=0");
+    let mid_bbox = nonzero_bbox(&mid).expect("content at t=mid");
+    let shift = mid_bbox.0 as i32 - b0.0 as i32;
+    assert!((shift - 20).abs() <= 2, "pattern coverage shifts ~+20px, got {shift}");
+}
+
+#[test]
+fn fe_image_subtree_animation_renders_without_panic() {
+    // Filter content animation is unsupported (usvg warns), but threading the
+    // query time into `apply_image` must still render a `feImage` subtree that
+    // contains an `<animate>` without panicking at any sampled time.
+    let svg = r##"<svg width="60" height="60" viewBox="0 0 60 60"
+        xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <defs>
+            <rect id="src" x="0" y="0" width="30" height="30" fill="green">
+                <animate attributeName="width" from="30" to="10" begin="0s" dur="4s" fill="freeze"/>
+            </rect>
+            <filter id="f">
+                <feImage xlink:href="#src"/>
+            </filter>
+        </defs>
+        <rect x="0" y="0" width="60" height="60" fill="blue" filter="url(#f)"/>
+    </svg>"##;
+    for time in [0.0, 2.0, 4.0] {
+        let pixmap = render_at_pixmap(svg, time);
+        assert!(
+            nonzero_bbox(&pixmap).is_some(),
+            "the feImage filter renders content at t={time}"
+        );
+    }
+}
