@@ -163,7 +163,14 @@ fn render_group(
 
     let bbox = group.layer_bounding_box().transform(transform)?;
 
-    let mut ibbox = if group.filters().is_empty() {
+    #[cfg(feature = "animation")]
+    let animated_layer = ctx.time.is_some() && has_animated_content(group);
+    #[cfg(not(feature = "animation"))]
+    let animated_layer = false;
+
+    let mut ibbox = if animated_layer {
+        ctx.max_bbox
+    } else if group.filters().is_empty() {
         // Convert group bbox into an integer one, expanding each side outwards by 2px
         // to make sure that anti-aliased pixels would not be clipped.
         tiny_skia::IntRect::from_xywh(
@@ -254,6 +261,17 @@ fn render_group(
     );
 
     Some(())
+}
+
+#[cfg(feature = "animation")]
+fn has_animated_content(group: &usvg::Group) -> bool {
+    group.animation().is_some()
+        || group.children().iter().any(|node| match node {
+            usvg::Node::Group(group) => has_animated_content(group),
+            usvg::Node::Path(path) => path.animation().is_some(),
+            usvg::Node::Text(text) => has_animated_content(text.flattened()),
+            usvg::Node::Image(_) => false,
+        })
 }
 
 /// Samples the root `viewBox` animation at `time`, returning the animated root

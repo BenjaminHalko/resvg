@@ -944,11 +944,15 @@ mod tests {
     use super::merge_geometry_paths;
 
     fn rectangle(x: f32, y: f32) -> Arc<tiny_skia::Path> {
+        rectangle_with_size(x, y, 10.0, 10.0)
+    }
+
+    fn rectangle_with_size(x: f32, y: f32, width: f32, height: f32) -> Arc<tiny_skia::Path> {
         let mut builder = PathBuilder::new();
         builder.move_to(x, y);
-        builder.line_to(x + 10.0, y);
-        builder.line_to(x + 10.0, y + 10.0);
-        builder.line_to(x, y + 10.0);
+        builder.line_to(x + width, y);
+        builder.line_to(x + width, y + height);
+        builder.line_to(x, y + height);
         builder.close();
         Arc::new(builder.finish().unwrap())
     }
@@ -961,6 +965,20 @@ mod tests {
 
         let merged = merge_geometry_paths(&base, &[x, y]).unwrap();
         let expected = rectangle(10.0, 20.0);
+
+        assert_eq!(merged.points(), expected.points());
+    }
+
+    #[test]
+    fn concurrent_geometry_tracks_combine_position_and_size() {
+        let base = rectangle_with_size(200.0, 135.0, 50.0, 50.0);
+        let x = rectangle_with_size(25.0, 135.0, 50.0, 50.0);
+        let y = rectangle_with_size(200.0, 50.0, 50.0, 50.0);
+        let width = rectangle_with_size(200.0, 135.0, 400.0, 50.0);
+        let height = rectangle_with_size(200.0, 135.0, 50.0, 240.0);
+
+        let merged = merge_geometry_paths(&base, &[x, y, width, height]).unwrap();
+        let expected = rectangle_with_size(25.0, 50.0, 400.0, 240.0);
 
         assert_eq!(merged.points(), expected.points());
     }

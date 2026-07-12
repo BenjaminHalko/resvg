@@ -162,6 +162,22 @@ fn grow_from_zero_renders_interpolated_width() {
 }
 
 #[test]
+fn concurrent_geometry_tracks_update_one_shape() {
+    let svg = r#"<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1 Basic//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11-basic.dtd"><svg width="480" height="360" viewBox="0 0 480 360" baseProfile="basic" xmlns="http://www.w3.org/2000/svg">
+        <g id="test-body-content"><rect x="200" y="135" width="50" height="50" fill="yellow" opacity=".5">
+            <animate attributeName="x" attributeType="XML" begin="0s" from="200" to="25" dur="9s" fill="freeze"/>
+            <animate attributeName="y" attributeType="XML" begin="0s" from="135" to="50" dur="9s" fill="freeze"/>
+            <animate attributeName="width" attributeType="XML" begin="0s" from="50" to="400" dur="9s" fill="freeze"/>
+            <animate attributeName="height" attributeType="XML" begin="0s" from="50" to="240" dur="9s" fill="freeze"/>
+        </rect></g>
+    </svg>"#;
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 9.0)),
+        Some((25, 50, 424, 289))
+    );
+}
+
+#[test]
 fn paint_carrier_reveals_fill_and_stroke() {
     // Fill carrier: `fill="none"` paints nothing statically; an animated color
     // fills the interior under `render_at`.
