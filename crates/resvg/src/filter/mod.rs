@@ -871,6 +871,8 @@ fn apply_image(
 
     let ctx = crate::render::Context {
         max_bbox: tiny_skia::IntRect::from_xywh(0, 0, region.width(), region.height()).unwrap(),
+        #[cfg(feature = "animation")]
+        time: None,
     };
 
     crate::render::render_nodes(fe.root(), &ctx, transform, &mut pixmap.as_mut());

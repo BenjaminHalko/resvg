@@ -47,7 +47,47 @@ pub fn render(
     )
     .unwrap();
 
-    let ctx = render::Context { max_bbox };
+    let ctx = render::Context {
+        max_bbox,
+        #[cfg(feature = "animation")]
+        time: None,
+    };
+    render::render_nodes(tree.root(), &ctx, transform, pixmap);
+}
+
+/// Renders a tree at a specific animation time.
+///
+/// `time` is in seconds and may be negative. Non-finite values (`NaN`, `±∞`)
+/// are treated as `0.0`.
+///
+/// `transform` will be used as a root transform.
+/// Can be used to position SVG inside the `pixmap`.
+///
+/// Note: filter/mask/clip regions and isolated-layer bounding boxes use
+/// load-time geometry; `objectBoundingBox`-derived resolutions are not
+/// re-derived per frame.
+///
+/// The produced content is in the sRGB color space.
+#[cfg(feature = "animation")]
+pub fn render_at(
+    tree: &usvg::Tree,
+    time: f32,
+    transform: tiny_skia::Transform,
+    pixmap: &mut tiny_skia::PixmapMut,
+) {
+    let target_size = tiny_skia::IntSize::from_wh(pixmap.width(), pixmap.height()).unwrap();
+    let max_bbox = tiny_skia::IntRect::from_xywh(
+        -(target_size.width() as i32) * 2,
+        -(target_size.height() as i32) * 2,
+        target_size.width() * 5,
+        target_size.height() * 5,
+    )
+    .unwrap();
+
+    let ctx = render::Context {
+        max_bbox,
+        time: Some(time.is_finite().then_some(time).unwrap_or(0.0)),
+    };
     render::render_nodes(tree.root(), &ctx, transform, pixmap);
 }
 
@@ -79,7 +119,11 @@ pub fn render_node(
 
     transform = transform.pre_translate(-bbox.x(), -bbox.y());
 
-    let ctx = render::Context { max_bbox };
+    let ctx = render::Context {
+        max_bbox,
+        #[cfg(feature = "animation")]
+        time: None,
+    };
     render::render_node(node, &ctx, transform, pixmap);
 
     Some(())

@@ -43,9 +43,19 @@ fn draw_children(
                 // We could use any values here. They will not be used anyway.
                 let ctx = Context {
                     max_bbox: tiny_skia::IntRect::from_xywh(0, 0, 1, 1).unwrap(),
+                    #[cfg(feature = "animation")]
+                    time: None,
                 };
 
-                crate::path::fill_path(path, mode, &ctx, transform, pixmap);
+                crate::path::fill_path(
+                    path,
+                    mode,
+                    &ctx,
+                    transform,
+                    pixmap,
+                    #[cfg(feature = "animation")]
+                    None,
+                );
             }
             usvg::Node::Text(text) => {
                 draw_children(text.flattened(), mode, transform, pixmap);

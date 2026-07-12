@@ -5,6 +5,9 @@ use crate::OptionLog;
 
 pub struct Context {
     pub max_bbox: tiny_skia::IntRect,
+    /// The animation query time in seconds, when rendering an animated frame.
+    #[cfg(feature = "animation")]
+    pub time: Option<f32>,
 }
 
 pub fn render_nodes(
@@ -52,9 +55,40 @@ fn render_group(
     transform: tiny_skia::Transform,
     pixmap: &mut tiny_skia::PixmapMut,
 ) -> Option<()> {
-    let transform = transform.pre_concat(group.transform());
+    // Sample the group's animations at the query time, if any.
+    #[cfg(feature = "animation")]
+    let overrides = ctx
+        .time
+        .zip(group.animation())
+        .map(|(t, anim)| crate::animation::compose::sample_overrides(anim, t));
 
-    if !group.should_isolate() {
+    // A group hidden by an animated `display`/`visibility` renders nothing.
+    #[cfg(feature = "animation")]
+    if overrides.as_ref().and_then(|o| o.hidden) == Some(true) {
+        return Some(());
+    }
+
+    // An animated transform replaces the static group transform.
+    #[cfg(feature = "animation")]
+    let group_transform = overrides
+        .as_ref()
+        .and_then(|o| o.transform)
+        .unwrap_or_else(|| group.transform());
+    #[cfg(not(feature = "animation"))]
+    let group_transform = group.transform();
+
+    let transform = transform.pre_concat(group_transform);
+
+    // A sampled opacity below 1 forces an isolation layer even when the static
+    // group would not otherwise need one.
+    #[cfg(feature = "animation")]
+    let sampled_opacity = overrides.as_ref().and_then(|o| o.opacity);
+    #[cfg(feature = "animation")]
+    let force_isolation = sampled_opacity.is_some_and(|op| op < 1.0);
+    #[cfg(not(feature = "animation"))]
+    let force_isolation = false;
+
+    if !group.should_isolate() && !force_isolation {
         render_nodes(group, ctx, transform, pixmap);
         return Some(());
     }
@@ -119,8 +153,13 @@ fn render_group(
         crate::mask::apply(mask, ctx, transform, &mut sub_pixmap);
     }
 
+    #[cfg(feature = "animation")]
+    let opacity = sampled_opacity.unwrap_or_else(|| group.opacity().get());
+    #[cfg(not(feature = "animation"))]
+    let opacity = group.opacity().get();
+
     let paint = tiny_skia::PixmapPaint {
-        opacity: group.opacity().get(),
+        opacity,
         blend_mode: convert_blend_mode(group.blend_mode()),
         quality: tiny_skia::FilterQuality::Nearest,
     };

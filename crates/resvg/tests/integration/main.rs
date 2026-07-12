@@ -16,6 +16,9 @@ mod render;
 
 mod extra;
 
+#[cfg(feature = "animation")]
+mod animation;
+
 const IMAGE_SIZE: u32 = 300;
 
 static GLOBAL_FONTDB: Lazy<Arc<fontdb::Database>> = Lazy::new(|| {
@@ -47,6 +50,28 @@ pub fn render_extra(name: &str) -> usize {
 
 pub fn render_node(name: &str, id: &str) -> usize {
     render_inner(name, TestMode::Node(id))
+}
+
+/// Renders an SVG string at an animation `time`, into a pixmap sized to the tree.
+#[cfg(feature = "animation")]
+pub fn render_at_pixmap(svg: &str, time: f32) -> tiny_skia::Pixmap {
+    let opt = usvg::Options::default();
+    let tree = usvg::Tree::from_str(svg, &opt).unwrap();
+    let mut pixmap =
+        tiny_skia::Pixmap::new(tree.size().width() as u32, tree.size().height() as u32).unwrap();
+    resvg::render_at(&tree, time, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    pixmap
+}
+
+/// Renders an SVG string statically, into a pixmap sized to the tree.
+#[cfg(feature = "animation")]
+pub fn render_pixmap(svg: &str) -> tiny_skia::Pixmap {
+    let opt = usvg::Options::default();
+    let tree = usvg::Tree::from_str(svg, &opt).unwrap();
+    let mut pixmap =
+        tiny_skia::Pixmap::new(tree.size().width() as u32, tree.size().height() as u32).unwrap();
+    resvg::render(&tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    pixmap
 }
 
 pub fn render_inner(name: &str, test_mode: TestMode) -> usize {
