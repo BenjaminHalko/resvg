@@ -22,8 +22,8 @@ use svgtypes::Color;
 use tiny_skia::{Path, PathBuilder, PathSegment, Point, Transform};
 use usvg::{
     AnimationKind, AnimationVisibility, CalcMode, Easing, FillRule, Keyframe, LineCap, LineJoin,
-    MotionRotate, MotionTrack, NonZeroRect, NormalizedF32, PathTrack, StrokeMiterlimit,
-    TimingFunction, TransformFunction, TransformKind, TransformTrack,
+    MotionRotate, MotionTrack, NonZeroRect, NormalizedF32, PathKeyframe, PathTrack,
+    StrokeMiterlimit, TimingFunction, TransformFunction, TransformKind, TransformTrack,
 };
 
 use super::easing::{apply_timing_function, key_spline};
@@ -168,6 +168,35 @@ pub(crate) fn interpolate_track_with_timing(
     }
 }
 
+/// Provides the locator's common offset and timing access for track keyframes.
+trait TrackKeyframe {
+    /// The keyframe offset in [0, 1].
+    fn keyframe_offset(&self) -> f32;
+
+    /// The per-keyframe timing function, if any.
+    fn keyframe_timing_function(&self) -> Option<TimingFunction>;
+}
+
+impl<T: Clone> TrackKeyframe for Keyframe<T> {
+    fn keyframe_offset(&self) -> f32 {
+        self.offset().get()
+    }
+
+    fn keyframe_timing_function(&self) -> Option<TimingFunction> {
+        self.timing_function().copied()
+    }
+}
+
+impl TrackKeyframe for PathKeyframe {
+    fn keyframe_offset(&self) -> f32 {
+        self.offset().get()
+    }
+
+    fn keyframe_timing_function(&self) -> Option<TimingFunction> {
+        self.timing_function().copied()
+    }
+}
+
 /// Locates the sampling position within a typed keyframe track.
 ///
 /// Returns the bracketing `(low, high)` keyframe indices and the eased segment
@@ -184,15 +213,8 @@ fn locate_track<T: Clone>(
         return None;
     }
 
-    let offsets: Vec<f32> = keyframes.iter().map(|k| k.offset().get()).collect();
-    let timings: Vec<Option<TimingFunction>> = keyframes
-        .iter()
-        .map(|k| k.timing_function().copied())
-        .collect();
-
     Some(locate(
-        &offsets,
-        &timings,
+        keyframes,
         easing,
         timing_function,
         progress,
@@ -200,42 +222,61 @@ fn locate_track<T: Clone>(
     ))
 }
 
-/// Locates the sampling position from raw offset and timing slices.
-fn locate(
-    offsets: &[f32],
-    timings: &[Option<TimingFunction>],
+/// Locates the sampling position from keyframes.
+fn locate<T: TrackKeyframe>(
+    keyframes: &[T],
     easing: &Easing,
     timing_function: Option<&TimingFunction>,
     progress: f32,
     paced_distances: Option<&[f32]>,
 ) -> (usize, usize, f32) {
-    if offsets.len() <= 1 {
+    if keyframes.len() <= 1 {
         return (0, 0, 0.0);
     }
 
     let progress = progress.clamp(0.0, 1.0);
     match easing.calc_mode() {
         CalcMode::Discrete => {
-            let index = discrete_index(offsets, progress);
+            let index = discrete_index(keyframes, progress);
             (index, index, 0.0)
         }
         CalcMode::Paced => match paced_distances {
             Some(distances) => paced_bracket(distances, progress),
             None => {
                 warn_paced_unsupported();
-                bracket(offsets, progress)
+                bracket(keyframes, progress)
             }
         },
         CalcMode::Linear | CalcMode::Spline => {
-            let (lo, hi, local) = bracket(offsets, progress);
-            let eased = ease_segment(easing, timings, timing_function, lo, local);
+            let (lo, hi, local) = bracket(keyframes, progress);
+            let eased = ease_segment(easing, keyframes, timing_function, lo, local);
             (lo, hi, eased)
         }
     }
 }
 
 /// Brackets `progress` against keyframe offsets, returning the raw local ratio.
-fn bracket(offsets: &[f32], progress: f32) -> (usize, usize, f32) {
+fn bracket<T: TrackKeyframe>(keyframes: &[T], progress: f32) -> (usize, usize, f32) {
+    let count = keyframes.len();
+    for i in 0..count - 1 {
+        let end = keyframes[i + 1].keyframe_offset();
+        if progress < end {
+            let start = keyframes[i].keyframe_offset();
+            let span = end - start;
+            let local = if span > 0.0 {
+                ((progress - start) / span).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            return (i, i + 1, local);
+        }
+    }
+    // At or past the last offset the final value is held.
+    (count - 1, count - 1, 0.0)
+}
+
+/// Brackets `progress` against raw offsets, returning the raw local ratio.
+fn bracket_offsets(offsets: &[f32], progress: f32) -> (usize, usize, f32) {
     let count = offsets.len();
     for i in 0..count - 1 {
         let end = offsets[i + 1];
@@ -279,10 +320,10 @@ fn paced_bracket(distances: &[f32], progress: f32) -> (usize, usize, f32) {
 }
 
 /// Returns the index whose discrete value is active at `progress`.
-fn discrete_index(offsets: &[f32], progress: f32) -> usize {
+fn discrete_index<T: TrackKeyframe>(keyframes: &[T], progress: f32) -> usize {
     let mut index = 0;
-    for (i, &offset) in offsets.iter().enumerate() {
-        if offset <= progress {
+    for (i, keyframe) in keyframes.iter().enumerate() {
+        if keyframe.keyframe_offset() <= progress {
             index = i;
         } else {
             break;
@@ -292,9 +333,9 @@ fn discrete_index(offsets: &[f32], progress: f32) -> usize {
 }
 
 /// Shapes a raw segment ratio by the spline or CSS per-keyframe easing.
-fn ease_segment(
+fn ease_segment<T: TrackKeyframe>(
     easing: &Easing,
-    timings: &[Option<TimingFunction>],
+    keyframes: &[T],
     timing_function: Option<&TimingFunction>,
     segment: usize,
     local: f32,
@@ -305,10 +346,9 @@ fn ease_segment(
             .and_then(|splines| splines.get(segment))
             .map(|spline| key_spline(*spline, local))
             .unwrap_or(local),
-        _ => timings
+        _ => keyframes
             .get(segment)
-            .copied()
-            .flatten()
+            .and_then(|keyframe| keyframe.keyframe_timing_function())
             .or(timing_function.copied())
             .map(|tf| apply_timing_function(&tf, local))
             .unwrap_or(local),
@@ -633,8 +673,7 @@ fn sample_css_transform(
         Some(build_css_matrix(&functions))
     } else {
         warn_incompatible_transform();
-        let offsets: Vec<f32> = keyframes.iter().map(|k| k.offset().get()).collect();
-        let index = discrete_index(&offsets, progress.clamp(0.0, 1.0));
+        let index = discrete_index(keyframes, progress.clamp(0.0, 1.0));
         Some(build_css_matrix(keyframes[index].value()))
     }
 }
@@ -719,11 +758,6 @@ fn sample_path(
         return None;
     }
 
-    let offsets: Vec<f32> = keyframes.iter().map(|k| k.offset().get()).collect();
-    let timings: Vec<Option<TimingFunction>> = keyframes
-        .iter()
-        .map(|k| k.timing_function().copied())
-        .collect();
     let paced = if matches!(easing.calc_mode(), CalcMode::Paced) {
         Some(
             (0..keyframes.len().saturating_sub(1))
@@ -735,8 +769,7 @@ fn sample_path(
     };
 
     let (lo, hi, t) = locate(
-        &offsets,
-        &timings,
+        keyframes,
         easing,
         timing_function,
         progress,
@@ -938,7 +971,7 @@ fn motion_fraction(track: &MotionTrack, easing: &Easing, progress: f32) -> f32 {
                 }
                 _ => uniform_offsets(key_points.len()),
             };
-            let (lo, hi, local) = bracket(&offsets, progress);
+            let (lo, hi, local) = bracket_offsets(&offsets, progress);
             let eased = match easing.calc_mode() {
                 CalcMode::Spline => easing
                     .key_splines()
