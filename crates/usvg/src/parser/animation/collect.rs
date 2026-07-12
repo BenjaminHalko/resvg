@@ -244,6 +244,7 @@ fn parse_animation(
                     target,
                     node,
                     attribute_name,
+                    is_set,
                     additive,
                     accumulate,
                     &easing,
@@ -310,6 +311,7 @@ fn parse_geometry_animation(
     target: SvgNode,
     node: SvgNode,
     attribute_name: &str,
+    is_set: bool,
     additive: Additive,
     accumulate: Accumulate,
     easing: &Easing,
@@ -317,16 +319,33 @@ fn parse_geometry_animation(
 ) -> Option<SmilValues> {
     let geometry = shape_geometry(target, state);
     let (values, offsets, raw_values) = if matches!(attribute_name, "d" | "points") {
-        let values = raw_geometry_values(target, node, attribute_name)?;
+        let values = raw_geometry_values(target, node, attribute_name, is_set)?;
         let offsets = offsets(values.len(), easing.key_times());
         (Vec::new(), offsets, Some(values))
     } else {
         let values = parse_smil_values(
             attribute_name,
-            node.attribute(AId::Values),
-            node.attribute(AId::From),
-            node.attribute(AId::To),
-            node.attribute(AId::By),
+            if is_set {
+                node.attribute(AId::To)
+                    .or_else(|| node.attribute(AId::Values))
+            } else {
+                node.attribute(AId::Values)
+            },
+            if is_set {
+                None
+            } else {
+                node.attribute(AId::From)
+            },
+            if is_set {
+                None
+            } else {
+                node.attribute(AId::To)
+            },
+            if is_set {
+                None
+            } else {
+                node.attribute(AId::By)
+            },
             additive,
             accumulate,
             easing.calc_mode(),
@@ -373,7 +392,14 @@ fn raw_geometry_values<'a, 'input: 'a>(
     target: SvgNode<'a, 'input>,
     node: SvgNode<'a, 'input>,
     name: &str,
+    is_set: bool,
 ) -> Option<Vec<&'a str>> {
+    if is_set {
+        return node
+            .attribute::<&str>(AId::To)
+            .or_else(|| node.attribute::<&str>(AId::Values))
+            .map(|value| vec![value.trim()]);
+    }
     if let Some(values) = node.attribute::<&str>(AId::Values) {
         let values = values
             .split(';')

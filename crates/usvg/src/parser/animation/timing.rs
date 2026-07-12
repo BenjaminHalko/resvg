@@ -369,7 +369,7 @@ fn parse_dur<'a, 'input>(node: SvgNode<'a, 'input>) -> Dur {
     }
 
     match parse_clock_value(value) {
-        Some(seconds) if seconds > 0.0 => Dur::Seconds(seconds),
+        Some(seconds) if seconds >= 0.0 => Dur::Seconds(seconds),
         _ => Dur::Indefinite,
     }
 }
@@ -953,6 +953,18 @@ mod tests {
         assert_eq!(intervals.len(), 1);
         assert_eq!(intervals[0].begin(), 1.0);
         assert_eq!(intervals[0].end(), Some(1.0));
+    }
+
+    #[test]
+    fn zero_duration_set_has_a_zero_length_interval() {
+        let svg = format!(
+            "<svg xmlns='{NS}'><rect><set id='a' attributeName='opacity' to='0.5' begin='1s' dur='0s' fill='freeze'/></rect></svg>"
+        );
+        let timing = timing_of(&svg, "a");
+        assert!(matches!(timing.dur(), Dur::Seconds(seconds) if *seconds == 0.0));
+        assert_eq!(timing.intervals().len(), 1);
+        assert_eq!(timing.intervals()[0].begin(), 1.0);
+        assert_eq!(timing.intervals()[0].end(), Some(1.0));
     }
 
     #[test]

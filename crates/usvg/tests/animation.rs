@@ -389,7 +389,10 @@ fn set_on_path_data_bakes_a_discrete_path_track() {
         .animation()
         .unwrap()
         .animations()[0];
-    assert!(matches!(animation.kind(), AnimationKind::Path(_)));
+    let AnimationKind::Path(track) = animation.kind() else {
+        panic!("expected a path track");
+    };
+    assert_eq!(track.keyframes().len(), 1);
     assert!(matches!(animation.easing().calc_mode(), CalcMode::Discrete));
 }
 
