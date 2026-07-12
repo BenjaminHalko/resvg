@@ -140,7 +140,14 @@ pub(crate) fn parse_tag_name(node: roxmltree::Node) -> Option<EId> {
         return None;
     }
 
-    EId::from_str(node.tag_name().name())
+    let id = EId::from_str(node.tag_name().name())?;
+
+    #[cfg(not(feature = "animation"))]
+    if id.is_animation() {
+        return None;
+    }
+
+    Some(id)
 }
 
 fn parse_xml_node_children<'input>(
@@ -241,6 +248,11 @@ pub(crate) fn parse_svg_element<'input>(
             None => continue,
         };
 
+        #[cfg(not(feature = "animation"))]
+        if aid.is_animation() {
+            continue;
+        }
+
         // During a `use` resolving, all `id` attributes must be ignored.
         // Otherwise we will get elements with duplicated id's.
         if ignore_ids && aid == AId::Id {
@@ -319,6 +331,11 @@ pub(crate) fn parse_svg_element<'input>(
     };
 
     let mut write_declaration = |declaration: &Declaration| {
+        #[cfg(not(feature = "animation"))]
+        if AId::from_str(declaration.name).is_some_and(|aid| aid.is_animation()) {
+            return;
+        }
+
         // TODO: perform XML attribute normalization
         let imp = declaration.important;
         let val = declaration.value;
@@ -807,5 +824,73 @@ fn fix_recursive_fe_image(doc: &mut Document) {
     for id in ids {
         let idx = doc.get(id).attribute_id(AId::Filter).unwrap();
         doc.attrs[idx].value = roxmltree::StringStorage::Borrowed("none");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_tag_name_gates_animation_elements() {
+        let xml =
+            roxmltree::Document::parse("<svg xmlns='http://www.w3.org/2000/svg'><animate/></svg>")
+                .unwrap();
+        let animate = xml.root_element().first_element_child().unwrap();
+
+        #[cfg(feature = "animation")]
+        assert_eq!(parse_tag_name(animate), Some(EId::Animate));
+        #[cfg(not(feature = "animation"))]
+        assert_eq!(parse_tag_name(animate), None);
+    }
+
+    #[test]
+    fn animation_child_element_gating() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'>\
+             <rect><animate attributeName='opacity' from='0' to='1' dur='1s'/></rect>\
+             </svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.root_element().first_element_child().unwrap();
+        let child = rect.first_element_child();
+
+        #[cfg(feature = "animation")]
+        assert_eq!(child.and_then(|n| n.tag_name()), Some(EId::Animate));
+        #[cfg(not(feature = "animation"))]
+        assert!(child.is_none());
+    }
+
+    #[test]
+    fn animation_attribute_gating() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'><rect begin='1s' dur='2s'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.root_element().first_element_child().unwrap();
+
+        #[cfg(feature = "animation")]
+        {
+            assert!(rect.has_attribute(AId::Begin));
+            assert!(rect.has_attribute(AId::Dur));
+        }
+        #[cfg(not(feature = "animation"))]
+        {
+            assert!(!rect.has_attribute(AId::Begin));
+            assert!(!rect.has_attribute(AId::Dur));
+        }
+    }
+
+    #[test]
+    fn transform_origin_is_never_gated() {
+        let xml = roxmltree::Document::parse(
+            "<svg xmlns='http://www.w3.org/2000/svg'><rect transform-origin='10 10'/></svg>",
+        )
+        .unwrap();
+        let doc = Document::parse_tree(&xml, None).unwrap();
+        let rect = doc.root_element().first_element_child().unwrap();
+        assert!(rect.has_attribute(AId::TransformOrigin));
     }
 }
