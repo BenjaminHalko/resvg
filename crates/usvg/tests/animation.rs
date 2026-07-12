@@ -5,7 +5,7 @@
 
 use std::sync::{Mutex, Once, OnceLock};
 
-use usvg::{AnimationKind, Dur, Node, Options, Timing, Tree};
+use usvg::{Additive, AnimationKind, CalcMode, Dur, Node, Options, SmilFill, Timing, Tree};
 
 const NS: &str = "http://www.w3.org/2000/svg";
 const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JTxAAAAAASUVORK5CYII=";
@@ -254,4 +254,183 @@ fn view_box_narrowing_keeps_first_warns_second() {
         .unwrap()
         .iter()
         .any(|warning| warning == "Only a single non-additive viewBox animation is supported."));
+}
+
+#[test]
+fn multi_interval_begins_yield_two_intervals() {
+    let tree = parse("<rect width='4' height='4'><animate attributeName='opacity' begin='0s;3s' dur='1s' from='0' to='1'/></rect>");
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let Timing::Smil(timing) = animation.timing() else {
+        panic!("expected SMIL timing");
+    };
+    assert_eq!(timing.intervals().len(), 2);
+    assert_eq!(timing.intervals()[0].begin(), 0.0);
+    assert_eq!(timing.intervals()[1].begin(), 3.0);
+}
+
+#[test]
+fn values_with_key_times_place_keyframes_at_offsets() {
+    let tree = parse("<rect width='4' height='4'><animate attributeName='opacity' values='0;0.5;1' keyTimes='0;0.3;1' dur='1s'/></rect>");
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Opacity(track) = animation.kind() else {
+        panic!("expected an opacity track");
+    };
+    assert_eq!(track.keyframes().len(), 3);
+    assert_eq!(track.keyframes()[0].offset().get(), 0.0);
+    assert!((track.keyframes()[1].offset().get() - 0.3).abs() < 1e-6);
+    assert_eq!(track.keyframes()[2].offset().get(), 1.0);
+    assert_eq!(track.keyframes()[1].value().get(), 0.5);
+}
+
+#[test]
+fn key_splines_are_parsed_into_easing() {
+    let tree = parse("<rect width='4' height='4'><animate attributeName='opacity' values='0;1' calcMode='spline' keySplines='0.5 0 0.5 1' dur='1s'/></rect>");
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    assert!(matches!(animation.easing().calc_mode(), CalcMode::Spline));
+    let splines = animation.easing().key_splines().unwrap();
+    assert_eq!(splines.len(), 1);
+    assert_eq!(splines[0], [0.5, 0.0, 0.5, 1.0]);
+}
+
+#[test]
+fn set_on_path_data_bakes_a_discrete_path_track() {
+    let tree = parse("<path d='M0 0 L4 4'><set attributeName='d' to='M8 8 L12 12'/></path>");
+    let animation = &path(&tree.root().children()[0]).animation().unwrap().animations()[0];
+    assert!(matches!(animation.kind(), AnimationKind::Path(_)));
+    assert!(matches!(animation.easing().calc_mode(), CalcMode::Discrete));
+}
+
+#[test]
+fn set_produces_a_single_keyframe_discrete_track() {
+    let tree = parse("<rect width='4' height='4'><set attributeName='opacity' to='0.5' dur='1s'/></rect>");
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Opacity(track) = animation.kind() else {
+        panic!("expected an opacity track");
+    };
+    assert_eq!(track.keyframes().len(), 1);
+    assert_eq!(track.keyframes()[0].value().get(), 0.5);
+    assert!(matches!(animation.easing().calc_mode(), CalcMode::Discrete));
+}
+
+#[test]
+fn bare_by_opacity_is_a_sum_delta_track() {
+    let tree = parse("<rect width='4' height='4'><animate attributeName='opacity' by='0.5' dur='1s'/></rect>");
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    assert!(matches!(animation.additive(), Additive::Sum));
+    let AnimationKind::Opacity(track) = animation.kind() else {
+        panic!("expected an opacity track");
+    };
+    assert_eq!(track.keyframes()[0].value().get(), 0.0);
+    assert_eq!(track.keyframes()[1].value().get(), 0.5);
+}
+
+#[test]
+fn additive_transform_pair_is_preserved() {
+    let tree = parse("<rect width='4' height='4'><animateTransform attributeName='transform' type='translate' from='0 0' to='2 3' dur='1s'/><animateTransform attributeName='transform' type='scale' additive='sum' from='1' to='2' dur='1s'/></rect>");
+    let wrapper = group(&tree.root().children()[0]);
+    assert_eq!(wrapper.animations().len(), 2);
+    assert!(matches!(wrapper.animations()[0].kind(), AnimationKind::Transform(_)));
+    assert!(matches!(wrapper.animations()[1].kind(), AnimationKind::Transform(_)));
+    assert!(matches!(wrapper.animations()[0].additive(), Additive::Replace));
+    assert!(matches!(wrapper.animations()[1].additive(), Additive::Sum));
+}
+
+#[test]
+fn gradient_stop_color_track_offsets_are_readable() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='1s'/></stop><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>");
+    let gradient = &tree.linear_gradients()[0];
+    let animation = &gradient.animation().unwrap().source_stops()[0].animations()[0];
+    let AnimationKind::StopColor(track) = animation.kind() else {
+        panic!("expected a stop-color track");
+    };
+    assert_eq!(track.keyframes().len(), 2);
+    assert_eq!(track.keyframes()[0].offset().get(), 0.0);
+    assert_eq!(track.keyframes()[1].offset().get(), 1.0);
+}
+
+#[test]
+fn radial_gradient_geometry_track_stays_native() {
+    let tree = parse("<defs><radialGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animate attributeName='r' from='0.2' to='0.8' dur='1s'/></radialGradient></defs><rect width='10' height='10' fill='url(#g)'/>");
+    let gradient = &tree.radial_gradients()[0];
+    let animation = &gradient.animation().unwrap().animations()[0];
+    let AnimationKind::GradientGeometry(track) = animation.kind() else {
+        panic!("expected a gradient geometry track");
+    };
+    assert_eq!(*track.keyframes()[0].value(), 0.2);
+    assert_eq!(*track.keyframes()[1].value(), 0.8);
+}
+
+#[test]
+fn gradient_transform_animation_maps_to_transform_kind() {
+    let tree = parse("<defs><linearGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animateTransform attributeName='gradientTransform' type='translate' from='0 0' to='2 3' dur='1s'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>");
+    let gradient = &tree.linear_gradients()[0];
+    let animation = &gradient.animation().unwrap().animations()[0];
+    assert!(matches!(animation.kind(), AnimationKind::Transform(_)));
+}
+
+#[test]
+fn stroke_dasharray_track_is_readable() {
+    let tree = parse("<path d='M0 0 L4 4' stroke='black' stroke-dasharray='5,5'><animate attributeName='stroke-dasharray' values='5,5;10,10' dur='1s'/></path>");
+    let animation = &path(&tree.root().children()[0]).animation().unwrap().animations()[0];
+    let AnimationKind::StrokeDasharray(track) = animation.kind() else {
+        panic!("expected a stroke-dasharray track");
+    };
+    assert_eq!(track.keyframes()[0].value().as_slice(), [5.0, 5.0]);
+    assert_eq!(track.keyframes()[1].value().as_slice(), [10.0, 10.0]);
+}
+
+#[test]
+fn polygon_points_animation_bakes_a_path_track() {
+    let tree = parse("<polygon points='0,0 4,0 4,4'><animate attributeName='points' values='0,0 4,0 4,4;0,0 8,0 8,8' dur='1s'/></polygon>");
+    let animation = &path(&tree.root().children()[0]).animation().unwrap().animations()[0];
+    let AnimationKind::Path(track) = animation.kind() else {
+        panic!("expected a baked path track");
+    };
+    assert_eq!(track.keyframes().len(), 2);
+    assert!(track.keyframes()[0].renderable());
+}
+
+#[test]
+fn view_box_track_keyframes_are_readable() {
+    let tree = parse("<animate attributeName='viewBox' from='0 0 20 20' to='0 0 40 40' dur='1s'/>");
+    let animation = tree.view_box_animation().unwrap();
+    assert_eq!(animation.track().keyframes().len(), 2);
+    assert_eq!(animation.track().keyframes()[0].value().width(), 20.0);
+    assert_eq!(animation.track().keyframes()[1].value().width(), 40.0);
+}
+
+#[test]
+fn display_reveal_marks_base_hidden_and_records_a_track() {
+    let tree = parse("<rect display='none' width='4' height='4'><set attributeName='display' to='inline' begin='1s'/></rect><rect width='4' height='4'/>");
+    let animation = path(&tree.root().children()[0]).animation().unwrap();
+    assert!(animation.base_hidden());
+    assert!(matches!(animation.animations()[0].kind(), AnimationKind::Display(_)));
+}
+
+#[test]
+fn motion_key_points_are_recorded() {
+    let tree = parse("<rect width='4' height='4'><animateMotion path='M0 0 L10 10' keyPoints='0;0.5;1' keyTimes='0;0.5;1' dur='1s'/></rect>");
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Motion(track) = animation.kind() else {
+        panic!("expected a motion track");
+    };
+    assert_eq!(track.key_points().unwrap().len(), 3);
+    assert_eq!(track.key_points().unwrap()[1].get(), 0.5);
+}
+
+#[test]
+fn freeze_and_remove_fill_modes_are_distinguished() {
+    let freeze = parse("<rect width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='1s' fill='freeze'/></rect>");
+    let freeze_animation = &group(&freeze.root().children()[0]).animations()[0];
+    let Timing::Smil(freeze_timing) = freeze_animation.timing() else {
+        panic!("expected SMIL timing");
+    };
+    assert!(matches!(freeze_timing.fill(), SmilFill::Freeze));
+
+    let remove = parse("<rect width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='1s' fill='remove'/></rect>");
+    let remove_animation = &group(&remove.root().children()[0]).animations()[0];
+    let Timing::Smil(remove_timing) = remove_animation.timing() else {
+        panic!("expected SMIL timing");
+    };
+    assert!(matches!(remove_timing.fill(), SmilFill::Remove));
 }
