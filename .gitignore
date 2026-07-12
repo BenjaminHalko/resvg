@@ -4,4 +4,3 @@ target
 .vscode
 tools/build-*
 **/diffs
-/.omo
