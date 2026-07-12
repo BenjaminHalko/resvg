@@ -8,6 +8,7 @@
 //! evaluates that model at a query time: [`timing`] turns a time into a
 //! normalized iteration progress and [`easing`] shapes that progress.
 
+pub(crate) mod compose;
 pub(crate) mod easing;
 pub(crate) mod interpolate;
 pub(crate) mod timing;
