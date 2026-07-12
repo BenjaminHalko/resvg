@@ -46,7 +46,6 @@ fn draw_children(
     for child in parent.children() {
         match child {
             usvg::Node::Path(path) => {
-                // Sample the path's animations at the query time, if any.
                 #[cfg(feature = "animation")]
                 let overrides = time
                     .zip(path.animation())

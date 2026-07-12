@@ -75,7 +75,6 @@ fn render_group(
     transform: tiny_skia::Transform,
     pixmap: &mut tiny_skia::PixmapMut,
 ) -> Option<()> {
-    // Sample the group's animations at the query time, if any.
     #[cfg(feature = "animation")]
     let overrides = ctx
         .time

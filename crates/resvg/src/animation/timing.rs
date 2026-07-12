@@ -205,8 +205,6 @@ mod tests {
         )
     }
 
-    // --- SMIL ---------------------------------------------------------------
-
     #[test]
     fn smil_before_start_is_none() {
         let timing = smil(
@@ -336,8 +334,6 @@ mod tests {
         );
         approx(smil_progress(&timing, 5.5).unwrap(), 0.5);
     }
-
-    // --- CSS ----------------------------------------------------------------
 
     fn css(
         duration: f32,

@@ -19,7 +19,6 @@ pub fn render(
     transform: tiny_skia::Transform,
     pixmap: &mut tiny_skia::PixmapMut,
 ) {
-    // Sample the path's animations at the query time, if any.
     #[cfg(feature = "animation")]
     let overrides = ctx
         .time

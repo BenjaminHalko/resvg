@@ -168,8 +168,6 @@ pub(crate) fn interpolate_track_with_timing(
     }
 }
 
-// --- Keyframe location ------------------------------------------------------
-
 /// Locates the sampling position within a typed keyframe track.
 ///
 /// Returns the bracketing `(low, high)` keyframe indices and the eased segment
@@ -341,8 +339,6 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-// --- Scalar and simple value tracks -----------------------------------------
-
 /// Samples a plain `f32` track (stroke width, geometry, image geometry).
 fn sample_scalar(
     keyframes: &[Keyframe<f32>],
@@ -490,8 +486,6 @@ fn sample_viewbox(
         lerp(a.height(), b.height(), t),
     )
 }
-
-// --- Transform tracks -------------------------------------------------------
 
 /// Samples a SMIL or CSS transform track into a matrix.
 fn sample_transform(
@@ -708,8 +702,6 @@ fn function_matrix(function: &TransformFunction) -> Transform {
     }
 }
 
-// --- Path tracks ------------------------------------------------------------
-
 /// Samples a baked path track point-wise, returning the shape and its
 /// renderability.
 ///
@@ -816,8 +808,6 @@ fn lerp_paths(a: &Path, b: &Path, t: f32) -> Option<Path> {
     }
     builder.finish()
 }
-
-// --- Motion tracks ----------------------------------------------------------
 
 /// Flatness tolerance in pixels for curve subdivision.
 const FLATNESS: f32 = 0.1;
@@ -1038,8 +1028,6 @@ fn perpendicular_distance(a: Point, b: Point, p: Point) -> f32 {
     }
     ((p.x - a.x) * dy - (p.y - a.y) * dx).abs() / length
 }
-
-// --- Warnings ---------------------------------------------------------------
 
 fn warn_incompatible_transform() {
     log::warn!("Unsupported transform animation; using discrete interpolation.");
