@@ -34,6 +34,8 @@ fn process() -> Result<(), String> {
         Ok(args) => args,
         Err(e) => {
             println!("{}", HELP);
+            #[cfg(feature = "animation")]
+            print!("{}", TIME_HELP);
             return Err(e);
         }
     };
@@ -205,7 +207,6 @@ OPTIONS:
 
   --export-area-drawing         Use drawing's tight bounding box instead of image size.
                                 Used during normal rendering and not during --export-id
-
   --perf                        Prints performance stats
   --quiet                       Disables warnings
 
@@ -247,6 +248,9 @@ struct CliArgs {
 
     export_area_drawing: bool,
 
+    #[cfg(feature = "animation")]
+    time: Option<f32>,
+
     perf: bool,
     quiet: bool,
 
@@ -259,6 +263,8 @@ fn collect_args() -> Result<CliArgs, pico_args::Error> {
 
     if input.contains("--help") {
         print!("{}", HELP);
+        #[cfg(feature = "animation")]
+        print!("{}", TIME_HELP);
         std::process::exit(0);
     }
 
@@ -309,6 +315,10 @@ fn collect_args() -> Result<CliArgs, pico_args::Error> {
         export_area_page: input.contains("--export-area-page"),
 
         export_area_drawing: input.contains("--export-area-drawing"),
+
+        #[cfg(feature = "animation")]
+        time: input.opt_value_from_str("--time")?,
+
         style_sheet: input.opt_value_from_str("--stylesheet").unwrap_or_default(),
 
         perf: input.contains("--perf"),
@@ -461,6 +471,8 @@ struct Args {
     export_id: Option<String>,
     export_area_page: bool,
     export_area_drawing: bool,
+    #[cfg(feature = "animation")]
+    time: Option<f32>,
     perf: bool,
     quiet: bool,
     usvg: usvg::Options<'static>,
@@ -471,6 +483,23 @@ struct Args {
 
 fn parse_args() -> Result<Args, String> {
     let args = collect_args().map_err(|e| e.to_string())?;
+
+    #[cfg(feature = "animation")]
+    {
+        if let Some(time) = args.time {
+            if !time.is_finite() {
+                return Err("--time must be a finite number".to_string());
+            }
+
+            if args.export_id.is_some() {
+                return Err("--time cannot be used with --export-id".to_string());
+            }
+
+            if args.export_area_drawing {
+                return Err("--time cannot be used with --export-area-drawing".to_string());
+            }
+        }
+    }
 
     if args.list_fonts {
         list_fonts(&args);
@@ -587,6 +616,8 @@ fn parse_args() -> Result<Args, String> {
         export_id,
         export_area_page: args.export_area_page,
         export_area_drawing: args.export_area_drawing,
+        #[cfg(feature = "animation")]
+        time: args.time,
         perf: args.perf,
         quiet: args.quiet,
         usvg,
@@ -740,7 +771,19 @@ fn render_svg(args: &Args, tree: &usvg::Tree) -> Result<tiny_skia::Pixmap, Strin
 
         let ts = args.fit_to.fit_to_transform(tree.size().to_int_size());
 
-        resvg::render(tree, ts, &mut pixmap.as_mut());
+        #[cfg(feature = "animation")]
+        {
+            if let Some(time) = args.time {
+                resvg::render_at(tree, time, ts, &mut pixmap.as_mut());
+            } else {
+                resvg::render(tree, ts, &mut pixmap.as_mut());
+            }
+        }
+
+        #[cfg(not(feature = "animation"))]
+        {
+            resvg::render(tree, ts, &mut pixmap.as_mut());
+        }
 
         if args.export_area_drawing {
             trim_pixmap(tree, ts, &pixmap).unwrap_or(pixmap)
@@ -756,6 +799,11 @@ fn render_svg(args: &Args, tree: &usvg::Tree) -> Result<tiny_skia::Pixmap, Strin
 
     Ok(img)
 }
+
+#[cfg(feature = "animation")]
+const TIME_HELP: &str = "
+  --time TIME                   Sets the animation time in seconds
+";
 
 fn trim_pixmap(
     tree: &usvg::Tree,
