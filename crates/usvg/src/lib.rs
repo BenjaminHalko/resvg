@@ -63,6 +63,9 @@ pub use parser::*;
 pub use text::*;
 pub use tree::*;
 
+#[cfg(feature = "animation")]
+pub use tree::animation::*;
+
 pub use roxmltree;
 
 #[cfg(feature = "text")]

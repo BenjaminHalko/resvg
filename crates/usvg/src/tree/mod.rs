@@ -1,6 +1,8 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+#[cfg(feature = "animation")]
+pub mod animation;
 pub mod filter;
 mod geom;
 mod text;
