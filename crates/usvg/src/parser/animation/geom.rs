@@ -108,20 +108,33 @@ pub(crate) fn bake_geometry_animation(
     d_keyframes: Option<&[&str]>,
     points_keyframes: Option<&[&str]>,
 ) -> Option<GeometryBake> {
-    let Baked {
-        keyframes,
-        multi_param,
-    } = match attribute_name {
-        "d" => bake_path_data(d_keyframes?, key_offsets, key_timing_fns)?,
-        "points" => bake_points(element_tag, points_keyframes?, key_offsets, key_timing_fns)?,
-        _ => bake_scalar(
-            element_tag,
-            attribute_name,
-            base,
-            keyframe_values,
-            key_offsets,
-            key_timing_fns,
-        )?,
+    let (
+        Baked {
+            keyframes,
+            multi_param,
+        },
+        accumulation_origin,
+    ) = match attribute_name {
+        "d" => (
+            bake_path_data(d_keyframes?, key_offsets, key_timing_fns)?,
+            None,
+        ),
+        "points" => (
+            bake_points(element_tag, points_keyframes?, key_offsets, key_timing_fns)?,
+            None,
+        ),
+        _ => (
+            bake_scalar(
+                element_tag,
+                attribute_name,
+                base,
+                keyframe_values,
+                key_offsets,
+                key_timing_fns,
+            )?,
+            base.with_attribute(attribute_name, 0.0)
+                .and_then(|geometry| build_shape_path(element_tag, &geometry)),
+        ),
     };
 
     if keyframes.is_empty() {
@@ -138,7 +151,13 @@ pub(crate) fn bake_geometry_animation(
         CalcMode::Discrete
     };
 
-    let accumulation_delta = bake_accumulation(&keyframes, accumulate, multi_param, interpolable);
+    let accumulation_delta = bake_accumulation(
+        &keyframes,
+        accumulate,
+        multi_param,
+        interpolable,
+        accumulation_origin.as_ref(),
+    );
 
     let path_keyframes = keyframes
         .into_iter()
@@ -304,6 +323,7 @@ fn bake_accumulation(
     accumulate: Accumulate,
     multi_param: bool,
     interpolable: bool,
+    origin: Option<&Path>,
 ) -> Option<Arc<Path>> {
     if !matches!(accumulate, Accumulate::Sum) {
         return None;
@@ -318,9 +338,8 @@ fn bake_accumulation(
         return None;
     }
 
-    let first = keyframes.first()?;
     let last = keyframes.last()?;
-    subtract_paths(&first.path, &last.path).map(Arc::new)
+    subtract_paths(origin?, &last.path).map(Arc::new)
 }
 
 /// Builds `end - base` point-wise, preserving the shared verb sequence.
@@ -672,11 +691,12 @@ mod tests {
         let delta = track
             .accumulation_delta()
             .expect("accumulation delta baked");
-        // width 10 -> 30: the right edge shifts by 20, the left edge is fixed.
+        // width 10 -> 30: each repeat accumulates the final value, so the
+        // right edge shifts by 30 while the left edge stays fixed.
         let points = delta.points();
         assert!(points[0].x.abs() < 1e-4);
-        assert!((points[1].x - 20.0).abs() < 1e-4);
-        assert!((points[2].x - 20.0).abs() < 1e-4);
+        assert!((points[1].x - 30.0).abs() < 1e-4);
+        assert!((points[2].x - 30.0).abs() < 1e-4);
         assert!(points[3].x.abs() < 1e-4);
     }
 
