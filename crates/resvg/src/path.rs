@@ -7,6 +7,10 @@ use crate::render::Context;
 use crate::animation::compose::{self, SampledOverrides};
 #[cfg(feature = "animation")]
 use crate::animation::interpolate::SampledValue;
+#[cfg(feature = "animation")]
+use std::sync::Arc;
+#[cfg(feature = "animation")]
+use tiny_skia::{Path, PathBuilder, PathSegment, Point};
 
 pub fn render(
     path: &usvg::Path,
@@ -30,11 +34,6 @@ pub fn render(
             if o.hidden.unwrap_or(!path.is_visible()) {
                 return;
             }
-            // A degenerate animated geometry (e.g. a grow-from-zero at t=0)
-            // renders nothing.
-            if let Some((_, false)) = o.path {
-                return;
-            }
         }
         None => {
             if !path.is_visible() {
@@ -50,6 +49,20 @@ pub fn render(
 
     #[cfg(feature = "animation")]
     let overrides = overrides.as_ref();
+
+    #[cfg(feature = "animation")]
+    let transform = overrides
+        .and_then(|o| {
+            o.transform.map(|matrix| {
+                let bbox = match o.css_transform {
+                    Some((_, usvg::TransformBox::StrokeBox)) => path.stroke_bounding_box(),
+                    _ => path.bounding_box(),
+                };
+                crate::render::css_transform(matrix, o.css_transform, bbox)
+            })
+        })
+        .map(|matrix| transform.pre_concat(matrix))
+        .unwrap_or(transform);
 
     if path.paint_order() == usvg::PaintOrder::FillAndStroke {
         fill_path(
@@ -100,11 +113,16 @@ pub fn fill_path(
     pixmap: &mut tiny_skia::PixmapMut,
     #[cfg(feature = "animation")] overrides: Option<&SampledOverrides>,
 ) -> Option<()> {
-    let data = effective_data(
+    #[cfg(feature = "animation")]
+    let animated_data = effective_data(
         path,
         #[cfg(feature = "animation")]
         overrides,
     );
+    #[cfg(feature = "animation")]
+    let data = animated_data.as_deref().unwrap_or_else(|| path.data());
+    #[cfg(not(feature = "animation"))]
+    let data = path.data();
 
     let fill = path.fill();
 
@@ -185,11 +203,16 @@ fn stroke_path(
     pixmap: &mut tiny_skia::PixmapMut,
     #[cfg(feature = "animation")] overrides: Option<&SampledOverrides>,
 ) -> Option<()> {
-    let data = effective_data(
+    #[cfg(feature = "animation")]
+    let animated_data = effective_data(
         path,
         #[cfg(feature = "animation")]
         overrides,
     );
+    #[cfg(feature = "animation")]
+    let data = animated_data.as_deref().unwrap_or_else(|| path.data());
+    #[cfg(not(feature = "animation"))]
+    let data = path.data();
 
     let stroke = path.stroke();
 
@@ -253,21 +276,178 @@ fn stroke_path(
     Some(())
 }
 
-/// The path segments to draw: an animated geometry substitutes the static data.
-fn effective_data<'a>(
-    path: &'a usvg::Path,
-    #[cfg(feature = "animation")] overrides: Option<&'a SampledOverrides>,
-) -> &'a tiny_skia::Path {
-    #[cfg(feature = "animation")]
-    {
-        overrides
-            .and_then(|o| o.path.as_ref())
-            .map_or_else(|| path.data(), |(p, _)| p.as_ref())
+/// The path segments to draw after independently baked geometry tracks combine.
+#[cfg(feature = "animation")]
+fn effective_data(path: &usvg::Path, overrides: Option<&SampledOverrides>) -> Option<Arc<Path>> {
+    let paths = &overrides?.paths;
+    match paths.as_slice() {
+        [] => None,
+        [(path, _)] => Some(path.clone()),
+        _ => merge_geometry_paths(
+            path.data(),
+            &paths
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect::<Vec<_>>(),
+        ),
     }
-    #[cfg(not(feature = "animation"))]
-    {
-        path.data()
+}
+
+/// Applies each geometry snapshot's changed coordinates without replacing other tracks.
+#[cfg(feature = "animation")]
+fn merge_geometry_paths(base: &Path, paths: &[Arc<Path>]) -> Option<Arc<Path>> {
+    let mut selected: Vec<&Arc<Path>> = Vec::with_capacity(paths.len());
+    for path in paths {
+        if let Some(existing) = selected
+            .iter_mut()
+            .find(|existing| same_geometry_components(base, existing, path))
+        {
+            *existing = path;
+        } else {
+            selected.push(path);
+        }
     }
+    let mut builders = selected
+        .iter()
+        .map(|path| path.segments())
+        .collect::<Vec<_>>();
+    let mut output = PathBuilder::new();
+
+    for base_segment in base.segments() {
+        let samples = builders
+            .iter_mut()
+            .map(Iterator::next)
+            .collect::<Option<Vec<_>>>()?;
+        if !merge_geometry_segment(&mut output, base_segment, &samples) {
+            return None;
+        }
+    }
+
+    if !builders
+        .iter_mut()
+        .all(|segments| segments.next().is_none())
+    {
+        return None;
+    }
+    Some(Arc::new(output.finish()?))
+}
+
+#[cfg(feature = "animation")]
+fn same_geometry_components(base: &Path, first: &Path, second: &Path) -> bool {
+    let base_points = base.points();
+    let first_points = first.points();
+    let second_points = second.points();
+    base_points.len() == first_points.len()
+        && base_points.len() == second_points.len()
+        && base_points
+            .iter()
+            .zip(first_points)
+            .zip(second_points)
+            .all(|((base, first), second)| {
+                (base.x != first.x) == (base.x != second.x)
+                    && (base.y != first.y) == (base.y != second.y)
+            })
+}
+
+/// Merges one verb-matched segment by retaining the final change per coordinate.
+#[cfg(feature = "animation")]
+fn merge_geometry_segment(
+    builder: &mut PathBuilder,
+    base: PathSegment,
+    samples: &[PathSegment],
+) -> bool {
+    match base {
+        PathSegment::MoveTo(point) => {
+            let Some(points) = matching_points(samples, |segment| match segment {
+                PathSegment::MoveTo(point) => Some(*point),
+                _ => None,
+            }) else {
+                return false;
+            };
+            let point = merge_geometry_point(point, &points);
+            builder.move_to(point.x, point.y);
+        }
+        PathSegment::LineTo(point) => {
+            let Some(points) = matching_points(samples, |segment| match segment {
+                PathSegment::LineTo(point) => Some(*point),
+                _ => None,
+            }) else {
+                return false;
+            };
+            let point = merge_geometry_point(point, &points);
+            builder.line_to(point.x, point.y);
+        }
+        PathSegment::QuadTo(control, point) => {
+            let Some(points) = matching_points(samples, |segment| match segment {
+                PathSegment::QuadTo(control, point) => Some((*control, *point)),
+                _ => None,
+            }) else {
+                return false;
+            };
+            let controls = points
+                .iter()
+                .map(|(control, _)| *control)
+                .collect::<Vec<_>>();
+            let ends = points.iter().map(|(_, point)| *point).collect::<Vec<_>>();
+            let control = merge_geometry_point(control, &controls);
+            let point = merge_geometry_point(point, &ends);
+            builder.quad_to(control.x, control.y, point.x, point.y);
+        }
+        PathSegment::CubicTo(control1, control2, point) => {
+            let Some(points) = matching_points(samples, |segment| match segment {
+                PathSegment::CubicTo(control1, control2, point) => {
+                    Some((*control1, *control2, *point))
+                }
+                _ => None,
+            }) else {
+                return false;
+            };
+            let controls1 = points
+                .iter()
+                .map(|(control, _, _)| *control)
+                .collect::<Vec<_>>();
+            let controls2 = points
+                .iter()
+                .map(|(_, control, _)| *control)
+                .collect::<Vec<_>>();
+            let ends = points
+                .iter()
+                .map(|(_, _, point)| *point)
+                .collect::<Vec<_>>();
+            let control1 = merge_geometry_point(control1, &controls1);
+            let control2 = merge_geometry_point(control2, &controls2);
+            let point = merge_geometry_point(point, &ends);
+            builder.cubic_to(
+                control1.x, control1.y, control2.x, control2.y, point.x, point.y,
+            );
+        }
+        PathSegment::Close => {
+            if !samples
+                .iter()
+                .all(|segment| matches!(segment, PathSegment::Close))
+            {
+                return false;
+            }
+            builder.close();
+        }
+    }
+    true
+}
+
+/// Collects matching payloads from a verb sequence.
+#[cfg(feature = "animation")]
+fn matching_points<T>(
+    samples: &[PathSegment],
+    extract: impl Fn(&PathSegment) -> Option<T>,
+) -> Option<Vec<T>> {
+    samples.iter().map(extract).collect()
+}
+
+#[cfg(feature = "animation")]
+fn merge_geometry_point(base: Point, points: &[Point]) -> Point {
+    points.iter().fold(base, |merged, point| {
+        Point::from_xy(merged.x + point.x - base.x, merged.y + point.y - base.y)
+    })
 }
 
 /// Sets a solid color on `paint`, folding the color's own alpha into `opacity`.
@@ -475,16 +655,22 @@ fn convert_animated_radial<'a>(
     time: Option<f32>,
 ) -> Option<tiny_skia::Shader<'a>> {
     let overrides = time.map(|t| sample_animation_list(animation.animations(), t));
-    let base_radius = animation
-        .underlying_r()
-        .unwrap_or_else(|| gradient.r().get());
-    let radius = overrides
+    let geometry = overrides
         .as_ref()
-        .and_then(gradient_geometry)
-        .unwrap_or(base_radius);
+        .map(|overrides| radial_geometry(gradient, animation, overrides))
+        .unwrap_or_else(|| RadialGeometry {
+            cx: gradient.cx(),
+            cy: gradient.cy(),
+            r: animation
+                .underlying_r()
+                .unwrap_or_else(|| gradient.r().get()),
+            fx: gradient.fx(),
+            fy: gradient.fy(),
+            fr: gradient.fr().get(),
+        });
 
     let sample = time.map(|t| (t, animation));
-    if radius <= 0.0 {
+    if geometry.r <= 0.0 {
         return Some(tiny_skia::Shader::SolidColor(last_stop_color(
             gradient, opacity, sample,
         )));
@@ -492,15 +678,19 @@ fn convert_animated_radial<'a>(
 
     let transform = overrides
         .as_ref()
-        .and_then(|overrides| overrides.transform)
+        .and_then(|overrides| {
+            overrides
+                .transform
+                .map(|transform| gradient.transform().pre_concat(transform))
+        })
         .unwrap_or_else(|| gradient.transform());
     let (mode, points) = convert_base_gradient(gradient, opacity, sample)?;
 
     tiny_skia::RadialGradient::new(
-        (gradient.fx(), gradient.fy()).into(),
-        gradient.fr().get(),
-        (gradient.cx(), gradient.cy()).into(),
-        radius,
+        (geometry.fx, geometry.fy).into(),
+        geometry.fr,
+        (geometry.cx, geometry.cy).into(),
+        geometry.r,
         points,
         mode,
         transform,
@@ -556,17 +746,91 @@ fn sample_animation_list(
     compose::sample_overrides(&node, t)
 }
 
-/// The gradient-level geometry override, applied as the radial `r`.
 #[cfg(feature = "animation")]
-fn gradient_geometry(overrides: &SampledOverrides) -> Option<f32> {
-    overrides
-        .gradient_overrides
-        .iter()
-        .rev()
-        .find_map(|(_, value)| match value {
-            SampledValue::GradientGeometry(radius) => Some(*radius),
-            _ => None,
-        })
+struct RadialGeometry {
+    cx: f32,
+    cy: f32,
+    r: f32,
+    fx: f32,
+    fy: f32,
+    fr: f32,
+}
+
+#[cfg(feature = "animation")]
+#[derive(Clone, Copy)]
+enum RadialGeometryComponent {
+    Cx,
+    Cy,
+    R,
+    Fx,
+    Fy,
+    Fr,
+}
+
+#[cfg(feature = "animation")]
+fn radial_geometry(
+    gradient: &usvg::RadialGradient,
+    animation: &usvg::GradientAnimation,
+    overrides: &SampledOverrides,
+) -> RadialGeometry {
+    let mut geometry = RadialGeometry {
+        cx: gradient.cx(),
+        cy: gradient.cy(),
+        r: animation
+            .underlying_r()
+            .unwrap_or_else(|| gradient.r().get()),
+        fx: gradient.fx(),
+        fy: gradient.fy(),
+        fr: gradient.fr().get(),
+    };
+    let focal_x_follows_center = gradient.fx() == gradient.cx();
+    let focal_y_follows_center = gradient.fy() == gradient.cy();
+    for (index, value) in &overrides.gradient_overrides {
+        let Some(usvg::AnimationKind::GradientGeometry(track)) = animation
+            .animations()
+            .get(*index)
+            .map(|animation| animation.kind())
+        else {
+            continue;
+        };
+        let SampledValue::GradientGeometry(value) = value else {
+            continue;
+        };
+        let Some(initial) = track.keyframes().first().map(|keyframe| *keyframe.value()) else {
+            continue;
+        };
+        let component = [
+            (RadialGeometryComponent::Cx, geometry.cx),
+            (RadialGeometryComponent::Cy, geometry.cy),
+            (RadialGeometryComponent::R, geometry.r),
+            (RadialGeometryComponent::Fx, geometry.fx),
+            (RadialGeometryComponent::Fy, geometry.fy),
+            (RadialGeometryComponent::Fr, geometry.fr),
+        ]
+        .into_iter()
+        .min_by(|(_, left), (_, right)| (initial - left).abs().total_cmp(&(initial - right).abs()))
+        .map(|(component, _)| component);
+        match component {
+            Some(RadialGeometryComponent::Cx) => {
+                geometry.cx = *value;
+                if focal_x_follows_center {
+                    geometry.fx = *value;
+                }
+            }
+            Some(RadialGeometryComponent::Cy) => {
+                geometry.cy = *value;
+                if focal_y_follows_center {
+                    geometry.fy = *value;
+                }
+            }
+            Some(RadialGeometryComponent::R) => geometry.r = *value,
+            Some(RadialGeometryComponent::Fx) => geometry.fx = *value,
+            Some(RadialGeometryComponent::Fy) => geometry.fy = *value,
+            Some(RadialGeometryComponent::Fr) => geometry.fr = *value,
+            None => {}
+        }
+    }
+    geometry
 }
 
 /// The effective gradient transform: a sampled `gradientTransform` replaces the
@@ -575,7 +839,11 @@ fn gradient_geometry(overrides: &SampledOverrides) -> Option<f32> {
 fn gradient_transform(gradient: &usvg::BaseGradient, time: Option<f32>) -> tiny_skia::Transform {
     time.zip(gradient.animation())
         .map(|(t, animation)| sample_animation_list(animation.animations(), t))
-        .and_then(|overrides| overrides.transform)
+        .and_then(|overrides| {
+            overrides
+                .transform
+                .map(|transform| gradient.transform().pre_concat(transform))
+        })
         .unwrap_or_else(|| gradient.transform())
 }
 
@@ -665,4 +933,47 @@ fn render_pattern_pixmap(
     ts = ts.pre_scale(1.0 / sx, 1.0 / sy);
 
     Some((pixmap, ts))
+}
+
+#[cfg(all(test, feature = "animation"))]
+mod tests {
+    use std::sync::Arc;
+
+    use tiny_skia::PathBuilder;
+
+    use super::merge_geometry_paths;
+
+    fn rectangle(x: f32, y: f32) -> Arc<tiny_skia::Path> {
+        let mut builder = PathBuilder::new();
+        builder.move_to(x, y);
+        builder.line_to(x + 10.0, y);
+        builder.line_to(x + 10.0, y + 10.0);
+        builder.line_to(x, y + 10.0);
+        builder.close();
+        Arc::new(builder.finish().unwrap())
+    }
+
+    #[test]
+    fn concurrent_geometry_tracks_combine_independent_components() {
+        let base = rectangle(0.0, 0.0);
+        let x = rectangle(10.0, 0.0);
+        let y = rectangle(0.0, 20.0);
+
+        let merged = merge_geometry_paths(&base, &[x, y]).unwrap();
+        let expected = rectangle(10.0, 20.0);
+
+        assert_eq!(merged.points(), expected.points());
+    }
+
+    #[test]
+    fn later_geometry_track_replaces_the_same_component() {
+        let base = rectangle(0.0, 0.0);
+        let first = rectangle(10.0, 0.0);
+        let second = rectangle(20.0, 0.0);
+
+        let merged = merge_geometry_paths(&base, &[first, second]).unwrap();
+        let expected = rectangle(20.0, 0.0);
+
+        assert_eq!(merged.points(), expected.points());
+    }
 }

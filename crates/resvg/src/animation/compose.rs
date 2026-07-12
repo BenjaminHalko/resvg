@@ -25,9 +25,10 @@ use tiny_skia::{Path, PathBuilder, PathSegment, Transform};
 use usvg::{
     Accumulate, Additive, Animation, AnimationKind, AnimationVisibility, Dur, Easing, FillRule,
     Interval, LineCap, LineJoin, NodeAnimation, NonZeroRect, SmilFill, SmilTiming, Timing,
+    TimingFunction, TransformBox, TransformOrigin, TransformTrack,
 };
 
-use super::interpolate::{SampledValue, interpolate_track};
+use super::interpolate::{SampledValue, interpolate_track_with_timing};
 use super::timing::{css_progress, smil_progress};
 
 /// The sampled geometry of an animated `image` element.
@@ -58,10 +59,12 @@ pub(crate) struct SampledOverrides {
     pub(crate) miterlimit: Option<f32>,
     pub(crate) fill_rule: Option<FillRule>,
     pub(crate) path: Option<(Arc<Path>, bool)>,
+    pub(crate) paths: Vec<(Arc<Path>, bool)>,
     pub(crate) hidden: Option<bool>,
     pub(crate) gradient_overrides: Vec<(usize, SampledValue)>,
     pub(crate) view_box: Option<NonZeroRect>,
     pub(crate) image_geometry: Option<ImageGeometry>,
+    pub(crate) css_transform: Option<(TransformOrigin, TransformBox)>,
 }
 
 /// One animation that contributes to the sandwich at the query time.
@@ -195,15 +198,20 @@ fn frozen_iteration(interval: &Interval, dur: &Dur) -> u32 {
 /// Samples one contribution and folds it into the running overrides.
 fn fold(overrides: &mut SampledOverrides, image: &mut ImageState, contribution: &Contribution) {
     let animation = contribution.animation;
-    let Some(sampled) =
-        interpolate_track(animation.kind(), animation.easing(), contribution.progress)
-    else {
+    let timing_function = css_timing_function(animation);
+    let Some(sampled) = interpolate_track_with_timing(
+        animation.kind(),
+        animation.easing(),
+        timing_function,
+        contribution.progress,
+    ) else {
         return;
     };
     let sampled = match animation.accumulate() {
         Accumulate::Sum => accumulate(
             animation.kind(),
             animation.easing(),
+            timing_function,
             sampled,
             contribution.iteration,
         ),
@@ -215,6 +223,7 @@ fn fold(overrides: &mut SampledOverrides, image: &mut ImageState, contribution: 
         animation.kind(),
         sampled,
         animation.additive(),
+        contribution.order,
     );
 }
 
@@ -225,10 +234,14 @@ fn apply(
     kind: &AnimationKind,
     sampled: SampledValue,
     additive: Additive,
+    order: usize,
 ) {
     match sampled {
         SampledValue::Transform(matrix) => {
-            fold_transform(&mut overrides.transform, matrix, additive)
+            fold_transform(&mut overrides.transform, matrix, additive);
+            if let AnimationKind::Transform(TransformTrack::Css { origin, box_, .. }) = kind {
+                overrides.css_transform = Some((*origin, *box_));
+            }
         }
         SampledValue::Motion(matrix) => {
             // Motion supplements the transform sandwich by post-multiplication.
@@ -237,13 +250,15 @@ fn apply(
         }
         SampledValue::Opacity(value) => match kind {
             AnimationKind::StopOpacity(_) => {
-                push_gradient(overrides, SampledValue::Opacity(value));
+                push_gradient(overrides, order, SampledValue::Opacity(value));
             }
             _ => fold_scalar(&mut overrides.opacity, value, additive),
         },
         SampledValue::Color(color) => match kind {
             AnimationKind::Stroke(_) => fold_color(&mut overrides.stroke, color, additive),
-            AnimationKind::StopColor(_) => push_gradient(overrides, SampledValue::Color(color)),
+            AnimationKind::StopColor(_) => {
+                push_gradient(overrides, order, SampledValue::Color(color))
+            }
             _ => fold_color(&mut overrides.fill, color, additive),
         },
         SampledValue::StrokeWidth(value) => {
@@ -265,9 +280,12 @@ fn apply(
         SampledValue::Visibility(visibility) => {
             overrides.hidden = Some(!matches!(visibility, AnimationVisibility::Visible));
         }
-        SampledValue::Path(path, renderable) => overrides.path = Some((path, renderable)),
+        SampledValue::Path(path, renderable) => {
+            overrides.path = Some((path.clone(), renderable));
+            overrides.paths.push((path, renderable));
+        }
         SampledValue::GradientGeometry(value) => {
-            push_gradient(overrides, SampledValue::GradientGeometry(value));
+            push_gradient(overrides, order, SampledValue::GradientGeometry(value));
         }
         SampledValue::ViewBox(rect) => overrides.view_box = Some(rect),
         SampledValue::ImageGeometry(value) => {
@@ -278,9 +296,15 @@ fn apply(
     }
 }
 
+fn css_timing_function(animation: &Animation) -> Option<&TimingFunction> {
+    match animation.timing() {
+        Timing::Css(timing) => Some(timing.timing_function()),
+        Timing::Smil(_) => None,
+    }
+}
+
 /// Records a gradient stop or geometry override keyed by its arrival order.
-fn push_gradient(overrides: &mut SampledOverrides, value: SampledValue) {
-    let index = overrides.gradient_overrides.len();
+fn push_gradient(overrides: &mut SampledOverrides, index: usize, value: SampledValue) {
     overrides.gradient_overrides.push((index, value));
 }
 
@@ -334,6 +358,7 @@ fn fold_dasharray(slot: &mut Option<Vec<f32>>, values: Vec<f32>, additive: Addit
 fn accumulate(
     kind: &AnimationKind,
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     sampled: SampledValue,
     iteration: u32,
 ) -> SampledValue {
@@ -351,7 +376,7 @@ fn accumulate(
             None => sampled,
         };
     }
-    let Some(end) = interpolate_track(kind, easing, 1.0) else {
+    let Some(end) = interpolate_track_with_timing(kind, easing, timing_function, 1.0) else {
         return sampled;
     };
     let factor = iteration as f32;
@@ -550,8 +575,9 @@ mod tests {
     use super::*;
 
     use usvg::{
-        AnimationSource, Begin, CalcMode, Keyframe, MotionRotate, MotionTrack, NormalizedF32,
-        PathKeyframe, PathTrack, Restart, Track, TransformKind, TransformTrack,
+        AnimationSource, Begin, CalcMode, CssFillMode, CssTiming, Direction, Iterations, Keyframe,
+        MotionRotate, MotionTrack, NormalizedF32, PathKeyframe, PathTrack, PlayState, Restart,
+        TimingFunction, Track, TransformKind, TransformTrack,
     };
 
     fn n(value: f32) -> NormalizedF32 {
@@ -885,5 +911,28 @@ mod tests {
 
         let overrides = sample_overrides(&node(vec![suppressed]), 0.5);
         assert!(overrides.stroke_width.is_none());
+    }
+
+    #[test]
+    fn css_timing_function_shapes_the_sampled_progress() {
+        let animation = width_animation(
+            &[0.0, 100.0],
+            Timing::Css(CssTiming::new(
+                2.0,
+                0.0,
+                Iterations::Count(1.0),
+                Direction::Normal,
+                CssFillMode::Both,
+                TimingFunction::CubicBezier(0.42, 0.0, 1.0, 1.0),
+                PlayState::Running,
+            )),
+            Additive::Replace,
+            Accumulate::None,
+        );
+
+        let sampled = sample_overrides(&node(vec![animation]), 1.0)
+            .stroke_width
+            .unwrap();
+        assert!(sampled < 45.0, "expected eased progress, got {sampled}");
     }
 }

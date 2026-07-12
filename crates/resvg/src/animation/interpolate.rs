@@ -81,65 +81,89 @@ pub(crate) fn interpolate_track(
     easing: &Easing,
     progress: f32,
 ) -> Option<SampledValue> {
+    interpolate_track_with_timing(kind, easing, None, progress)
+}
+
+/// Interpolates a track with its animation-level CSS timing function.
+pub(crate) fn interpolate_track_with_timing(
+    kind: &AnimationKind,
+    easing: &Easing,
+    timing_function: Option<&TimingFunction>,
+    progress: f32,
+) -> Option<SampledValue> {
     match kind {
         AnimationKind::Transform(track) | AnimationKind::GradientTransform(track) => {
-            sample_transform(track, easing, progress).map(SampledValue::Transform)
+            sample_transform(track, easing, timing_function, progress).map(SampledValue::Transform)
         }
         AnimationKind::Motion(track) => {
             sample_motion(track, easing, progress).map(SampledValue::Motion)
         }
         AnimationKind::Opacity(track) | AnimationKind::StopOpacity(track) => {
-            sample_opacity(track.keyframes(), easing, progress).map(SampledValue::Opacity)
+            sample_opacity(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::Opacity)
         }
         AnimationKind::Fill(track)
         | AnimationKind::Stroke(track)
         | AnimationKind::StopColor(track) => {
-            sample_color(track.keyframes(), easing, progress).map(SampledValue::Color)
+            sample_color(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::Color)
         }
         AnimationKind::StrokeWidth(track) => {
-            sample_scalar(track.keyframes(), easing, progress).map(SampledValue::StrokeWidth)
+            sample_scalar(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::StrokeWidth)
         }
         AnimationKind::StrokeDashoffset(track) => {
-            sample_scalar(track.keyframes(), easing, progress).map(SampledValue::StrokeDashoffset)
+            sample_scalar(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::StrokeDashoffset)
         }
         AnimationKind::StrokeDasharray(track) => {
-            sample_dasharray(track.keyframes(), easing, progress).map(SampledValue::StrokeDasharray)
+            sample_dasharray(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::StrokeDasharray)
         }
         AnimationKind::StrokeMiterlimit(track) => {
-            sample_miterlimit(track.keyframes(), easing, progress)
+            sample_miterlimit(track.keyframes(), easing, timing_function, progress)
                 .map(SampledValue::StrokeMiterlimit)
         }
         AnimationKind::StrokeLinecap(track) => {
-            sample_discrete(track.keyframes(), easing, progress).map(SampledValue::StrokeLinecap)
+            sample_discrete(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::StrokeLinecap)
         }
         AnimationKind::StrokeLinejoin(track) => {
-            sample_discrete(track.keyframes(), easing, progress).map(SampledValue::StrokeLinejoin)
+            sample_discrete(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::StrokeLinejoin)
         }
         AnimationKind::FillRule(track) => {
-            sample_discrete(track.keyframes(), easing, progress).map(SampledValue::FillRule)
+            sample_discrete(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::FillRule)
         }
         AnimationKind::Display(track) => {
-            sample_discrete(track.keyframes(), easing, progress).map(SampledValue::Display)
+            sample_discrete(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::Display)
         }
         AnimationKind::Visibility(track) => {
-            sample_discrete(track.keyframes(), easing, progress).map(SampledValue::Visibility)
+            sample_discrete(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::Visibility)
         }
-        AnimationKind::Path(track) => sample_path(track, easing, progress)
+        AnimationKind::Path(track) => sample_path(track, easing, timing_function, progress)
             .map(|(path, renderable)| SampledValue::Path(path, renderable)),
         AnimationKind::StopOffset(track) => {
-            sample_opacity(track.keyframes(), easing, progress).map(SampledValue::GradientGeometry)
+            sample_opacity(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::GradientGeometry)
         }
         AnimationKind::GradientGeometry(track) => {
-            sample_scalar(track.keyframes(), easing, progress).map(SampledValue::GradientGeometry)
+            sample_scalar(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::GradientGeometry)
         }
         AnimationKind::ViewBox(track) => {
-            sample_viewbox(track.keyframes(), easing, progress).map(SampledValue::ViewBox)
+            sample_viewbox(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::ViewBox)
         }
         AnimationKind::ImageX(track)
         | AnimationKind::ImageY(track)
         | AnimationKind::ImageWidth(track)
         | AnimationKind::ImageHeight(track) => {
-            sample_scalar(track.keyframes(), easing, progress).map(SampledValue::ImageGeometry)
+            sample_scalar(track.keyframes(), easing, timing_function, progress)
+                .map(SampledValue::ImageGeometry)
         }
     }
 }
@@ -154,6 +178,7 @@ pub(crate) fn interpolate_track(
 fn locate_track<T: Clone>(
     keyframes: &[Keyframe<T>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
     paced_distances: Option<Vec<f32>>,
 ) -> Option<(usize, usize, f32)> {
@@ -171,6 +196,7 @@ fn locate_track<T: Clone>(
         &offsets,
         &timings,
         easing,
+        timing_function,
         progress,
         paced_distances.as_deref(),
     ))
@@ -181,6 +207,7 @@ fn locate(
     offsets: &[f32],
     timings: &[Option<TimingFunction>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
     paced_distances: Option<&[f32]>,
 ) -> (usize, usize, f32) {
@@ -203,7 +230,7 @@ fn locate(
         },
         CalcMode::Linear | CalcMode::Spline => {
             let (lo, hi, local) = bracket(offsets, progress);
-            let eased = ease_segment(easing, timings, lo, local);
+            let eased = ease_segment(easing, timings, timing_function, lo, local);
             (lo, hi, eased)
         }
     }
@@ -270,6 +297,7 @@ fn discrete_index(offsets: &[f32], progress: f32) -> usize {
 fn ease_segment(
     easing: &Easing,
     timings: &[Option<TimingFunction>],
+    timing_function: Option<&TimingFunction>,
     segment: usize,
     local: f32,
 ) -> f32 {
@@ -283,6 +311,7 @@ fn ease_segment(
             .get(segment)
             .copied()
             .flatten()
+            .or(timing_function.copied())
             .map(|tf| apply_timing_function(&tf, local))
             .unwrap_or(local),
     }
@@ -315,9 +344,14 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 // --- Scalar and simple value tracks -----------------------------------------
 
 /// Samples a plain `f32` track (stroke width, geometry, image geometry).
-fn sample_scalar(keyframes: &[Keyframe<f32>], easing: &Easing, progress: f32) -> Option<f32> {
+fn sample_scalar(
+    keyframes: &[Keyframe<f32>],
+    easing: &Easing,
+    timing_function: Option<&TimingFunction>,
+    progress: f32,
+) -> Option<f32> {
     let paced = paced_of(keyframes, easing, |a, b| (a - b).abs());
-    let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
+    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
     Some(lerp(*keyframes[lo].value(), *keyframes[hi].value(), t))
 }
 
@@ -325,10 +359,11 @@ fn sample_scalar(keyframes: &[Keyframe<f32>], easing: &Easing, progress: f32) ->
 fn sample_opacity(
     keyframes: &[Keyframe<NormalizedF32>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<f32> {
     let paced = paced_of(keyframes, easing, |a, b| (a.get() - b.get()).abs());
-    let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
+    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
     let value = lerp(keyframes[lo].value().get(), keyframes[hi].value().get(), t);
     Some(value.clamp(0.0, 1.0))
 }
@@ -337,10 +372,11 @@ fn sample_opacity(
 fn sample_miterlimit(
     keyframes: &[Keyframe<StrokeMiterlimit>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<f32> {
     let paced = paced_of(keyframes, easing, |a, b| (a.get() - b.get()).abs());
-    let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
+    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
     Some(lerp(
         keyframes[lo].value().get(),
         keyframes[hi].value().get(),
@@ -349,9 +385,14 @@ fn sample_miterlimit(
 }
 
 /// Samples a color track by lerping each sRGB channel.
-fn sample_color(keyframes: &[Keyframe<Color>], easing: &Easing, progress: f32) -> Option<Color> {
+fn sample_color(
+    keyframes: &[Keyframe<Color>],
+    easing: &Easing,
+    timing_function: Option<&TimingFunction>,
+    progress: f32,
+) -> Option<Color> {
     let paced = paced_of(keyframes, easing, color_distance);
-    let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
+    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
     Some(lerp_color(keyframes[lo].value(), keyframes[hi].value(), t))
 }
 
@@ -385,13 +426,14 @@ fn color_distance(a: &Color, b: &Color) -> f32 {
 fn sample_dasharray(
     keyframes: &[Keyframe<Vec<f32>>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<Vec<f32>> {
     let paced = paced_of(keyframes, easing, |a, b| {
         let len = a.len().min(b.len());
         (0..len).map(|i| (a[i] - b[i]).abs()).sum()
     });
-    let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
+    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
     let a = keyframes[lo].value();
     let b = keyframes[hi].value();
     let len = a.len().min(b.len());
@@ -402,9 +444,10 @@ fn sample_dasharray(
 fn sample_discrete<T: Copy>(
     keyframes: &[Keyframe<T>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<T> {
-    let (lo, _, _) = locate_track(keyframes, easing, progress, None)?;
+    let (lo, _, _) = locate_track(keyframes, easing, timing_function, progress, None)?;
     Some(*keyframes[lo].value())
 }
 
@@ -412,6 +455,7 @@ fn sample_discrete<T: Copy>(
 fn sample_viewbox(
     keyframes: &[Keyframe<NonZeroRect>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<NonZeroRect> {
     let paced = paced_of(keyframes, easing, |a, b| {
@@ -421,7 +465,7 @@ fn sample_viewbox(
         let dh = a.height() - b.height();
         (dx * dx + dy * dy + dw * dw + dh * dh).sqrt()
     });
-    let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
+    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
     let a = keyframes[lo].value();
     let b = keyframes[hi].value();
     NonZeroRect::from_xywh(
@@ -435,12 +479,19 @@ fn sample_viewbox(
 // --- Transform tracks -------------------------------------------------------
 
 /// Samples a SMIL or CSS transform track into a matrix.
-fn sample_transform(track: &TransformTrack, easing: &Easing, progress: f32) -> Option<Transform> {
+fn sample_transform(
+    track: &TransformTrack,
+    easing: &Easing,
+    timing_function: Option<&TimingFunction>,
+    progress: f32,
+) -> Option<Transform> {
     match track {
         TransformTrack::Smil { kind, keyframes } => {
-            sample_smil_transform(*kind, keyframes, easing, progress)
+            sample_smil_transform(*kind, keyframes, easing, timing_function, progress)
         }
-        TransformTrack::Css { keyframes, .. } => sample_css_transform(keyframes, easing, progress),
+        TransformTrack::Css { keyframes, .. } => {
+            sample_css_transform(keyframes, easing, timing_function, progress)
+        }
     }
 }
 
@@ -450,6 +501,7 @@ fn sample_smil_transform(
     kind: TransformKind,
     keyframes: &[Keyframe<Vec<f32>>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<Transform> {
     let paced = if matches!(easing.calc_mode(), CalcMode::Paced) {
@@ -457,7 +509,7 @@ fn sample_smil_transform(
     } else {
         None
     };
-    let (lo, hi, t) = locate_track(keyframes, easing, progress, paced)?;
+    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
     Some(build_smil_matrix(
         kind,
         keyframes[lo].value(),
@@ -554,6 +606,7 @@ fn build_smil_matrix(kind: TransformKind, a: &[f32], b: &[f32], t: f32) -> Trans
 fn sample_css_transform(
     keyframes: &[Keyframe<Vec<TransformFunction>>],
     easing: &Easing,
+    timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<Transform> {
     if keyframes.is_empty() {
@@ -561,7 +614,7 @@ fn sample_css_transform(
     }
 
     if css_functions_compatible(keyframes) {
-        let (lo, hi, t) = locate_track(keyframes, easing, progress, None)?;
+        let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, None)?;
         let functions: Vec<TransformFunction> = keyframes[lo]
             .value()
             .iter()
@@ -648,7 +701,12 @@ fn function_matrix(function: &TransformFunction) -> Transform {
 /// The sampled shape renders unless both bracketing keyframes are degenerate or
 /// the frame rests exactly on a degenerate keyframe with no progress toward a
 /// renderable neighbor, so a `0 -> 100` grow draws at every `t > 0`.
-fn sample_path(track: &PathTrack, easing: &Easing, progress: f32) -> Option<(Arc<Path>, bool)> {
+fn sample_path(
+    track: &PathTrack,
+    easing: &Easing,
+    timing_function: Option<&TimingFunction>,
+    progress: f32,
+) -> Option<(Arc<Path>, bool)> {
     let keyframes = track.keyframes();
     if keyframes.is_empty() {
         return None;
@@ -669,7 +727,14 @@ fn sample_path(track: &PathTrack, easing: &Easing, progress: f32) -> Option<(Arc
         None
     };
 
-    let (lo, hi, t) = locate(&offsets, &timings, easing, progress, paced.as_deref());
+    let (lo, hi, t) = locate(
+        &offsets,
+        &timings,
+        easing,
+        timing_function,
+        progress,
+        paced.as_deref(),
+    );
 
     let low_renderable = keyframes[lo].renderable();
     let high_renderable = keyframes[hi].renderable();
