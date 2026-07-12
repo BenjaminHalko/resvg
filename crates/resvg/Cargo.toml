@@ -44,3 +44,5 @@ memmap-fonts = ["usvg/memmap-fonts"]
 # When disabled, `image` elements with SVG data will still be rendered.
 # Adds around 200KiB to your binary.
 raster-images = ["gif", "image-webp", "dep:zune-jpeg"]
+# Enables SMIL and CSS animation rendering.
+animation = ["usvg/animation"]

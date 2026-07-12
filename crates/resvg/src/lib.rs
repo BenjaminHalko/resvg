@@ -17,6 +17,8 @@
 pub use tiny_skia;
 pub use usvg;
 
+#[cfg(feature = "animation")]
+mod animation;
 mod clip;
 mod filter;
 mod geom;
