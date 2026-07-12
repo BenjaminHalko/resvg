@@ -13,7 +13,9 @@ use std::sync::Arc;
 
 use tiny_skia_path::{Path, PathBuilder, PathSegment, Point};
 
-use crate::parser::shapes::{circle_path, ellipse_path, line_path, polyline_path, rect_path};
+use crate::parser::shapes::{
+    animated_rect_path, circle_path, ellipse_path, line_path, polyline_path, rect_path,
+};
 use crate::parser::svgtree::EId;
 use crate::tree::animation::{
     Accumulate, AnimationKind, CalcMode, PathKeyframe, PathTrack, TimingFunction,
@@ -48,6 +50,10 @@ pub(crate) struct ShapeGeometry {
     pub(crate) y1: f32,
     pub(crate) x2: f32,
     pub(crate) y2: f32,
+    #[cfg(feature = "animation")]
+    pub(crate) rx_is_implicit: bool,
+    #[cfg(feature = "animation")]
+    pub(crate) ry_is_implicit: bool,
 }
 
 impl ShapeGeometry {
@@ -59,8 +65,20 @@ impl ShapeGeometry {
             "y" => self.y = value,
             "width" => self.width = value,
             "height" => self.height = value,
-            "rx" => self.rx = value,
-            "ry" => self.ry = value,
+            "rx" => {
+                self.rx = value;
+                #[cfg(feature = "animation")]
+                if self.ry_is_implicit {
+                    self.ry = value;
+                }
+            }
+            "ry" => {
+                self.ry = value;
+                #[cfg(feature = "animation")]
+                if self.rx_is_implicit {
+                    self.rx = value;
+                }
+            }
             "cx" => self.cx = value,
             "cy" => self.cy = value,
             "r" => self.r = value,
@@ -194,7 +212,7 @@ fn bake_scalar(
         }
 
         let geometry = base.with_attribute(attribute_name, value)?;
-        let path = build_shape_path(element_tag, &geometry)?;
+        let path = build_animated_shape_path(element_tag, attribute_name, geometry)?;
         let renderable = is_shape_renderable(element_tag, &geometry);
 
         keyframes.push(RawKeyframe {
@@ -209,6 +227,24 @@ fn bake_scalar(
         keyframes,
         multi_param: false,
     })
+}
+
+fn build_animated_shape_path(
+    element_tag: EId,
+    attribute_name: &str,
+    geometry: ShapeGeometry,
+) -> Option<Path> {
+    if element_tag == EId::Rect && matches!(attribute_name, "rx" | "ry") {
+        return animated_rect_path(
+            geometry.x,
+            geometry.y,
+            geometry.width,
+            geometry.height,
+            geometry.rx,
+            geometry.ry,
+        );
+    }
+    build_shape_path(element_tag, &geometry)
 }
 
 /// Bakes each `d` keyframe by parsing it as absolute path data.
@@ -698,6 +734,30 @@ mod tests {
         assert!((points[1].x - 30.0).abs() < 1e-4);
         assert!((points[2].x - 30.0).abs() < 1e-4);
         assert!(points[3].x.abs() < 1e-4);
+    }
+
+    #[test]
+    fn rect_radius_animation_keeps_cubic_keyframes() {
+        let base = ShapeGeometry {
+            width: 160.0,
+            height: 160.0,
+            ry_is_implicit: true,
+            ..ShapeGeometry::default()
+        };
+        let bake = bake_geometry_animation(
+            EId::Rect,
+            "rx",
+            base,
+            &[0.0, 120.0],
+            &[n(0.0), n(1.0)],
+            &[None, None],
+            CalcMode::Linear,
+            Accumulate::None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(matches!(bake.calc_mode, CalcMode::Linear));
     }
 
     #[test]

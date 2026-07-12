@@ -430,13 +430,17 @@ fn raw_geometry_values<'a, 'input: 'a>(
 }
 
 fn shape_geometry(node: SvgNode, state: &converter::State) -> ShapeGeometry {
+    let rx_is_implicit = !node.has_attribute(AId::Rx);
+    let ry_is_implicit = !node.has_attribute(AId::Ry);
+    let rx = node.convert_user_length(AId::Rx, state, Length::zero());
+    let ry = node.convert_user_length(AId::Ry, state, Length::zero());
     ShapeGeometry {
         x: node.convert_user_length(AId::X, state, Length::zero()),
         y: node.convert_user_length(AId::Y, state, Length::zero()),
         width: node.convert_user_length(AId::Width, state, Length::zero()),
         height: node.convert_user_length(AId::Height, state, Length::zero()),
-        rx: node.convert_user_length(AId::Rx, state, Length::zero()),
-        ry: node.convert_user_length(AId::Ry, state, Length::zero()),
+        rx: if rx_is_implicit { ry } else { rx },
+        ry: if ry_is_implicit { rx } else { ry },
         cx: node.convert_user_length(AId::Cx, state, Length::zero()),
         cy: node.convert_user_length(AId::Cy, state, Length::zero()),
         r: node.convert_user_length(AId::R, state, Length::zero()),
@@ -444,6 +448,10 @@ fn shape_geometry(node: SvgNode, state: &converter::State) -> ShapeGeometry {
         y1: node.convert_user_length(AId::Y1, state, Length::zero()),
         x2: node.convert_user_length(AId::X2, state, Length::zero()),
         y2: node.convert_user_length(AId::Y2, state, Length::zero()),
+        #[cfg(feature = "animation")]
+        rx_is_implicit,
+        #[cfg(feature = "animation")]
+        ry_is_implicit,
     }
 }
 

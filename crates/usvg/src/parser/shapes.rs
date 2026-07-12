@@ -134,6 +134,40 @@ pub(crate) fn rect_path(x: f32, y: f32, width: f32, height: f32, rx: f32, ry: f3
     Some(path)
 }
 
+#[cfg(feature = "animation")]
+pub(crate) fn animated_rect_path(
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    rx: f32,
+    ry: f32,
+) -> Option<Path> {
+    let rx = rx.max(1.0).min(width / 2.0);
+    let ry = ry.max(1.0).min(height / 2.0);
+    let mut builder = tiny_skia_path::PathBuilder::new();
+    builder.move_to(x + rx, y);
+    builder.line_to(x + width - rx, y);
+    builder.arc_to_tolerance(rx, ry, 0.0, false, true, x + width, y + ry, 10000.0);
+    builder.line_to(x + width, y + height - ry);
+    builder.arc_to_tolerance(
+        rx,
+        ry,
+        0.0,
+        false,
+        true,
+        x + width - rx,
+        y + height,
+        10000.0,
+    );
+    builder.line_to(x + rx, y + height);
+    builder.arc_to_tolerance(rx, ry, 0.0, false, true, x, y + height - ry, 10000.0);
+    builder.line_to(x, y + ry);
+    builder.arc_to_tolerance(rx, ry, 0.0, false, true, x + rx, y, 10000.0);
+    builder.close();
+    builder.finish()
+}
+
 fn resolve_rx_ry(node: SvgNode, state: &converter::State) -> (f32, f32) {
     let mut rx_opt = node.attribute::<Length>(AId::Rx);
     let mut ry_opt = node.attribute::<Length>(AId::Ry);
@@ -315,6 +349,18 @@ trait PathBuilderExt {
         x: f32,
         y: f32,
     );
+
+    fn arc_to_tolerance(
+        &mut self,
+        rx: f32,
+        ry: f32,
+        x_axis_rotation: f32,
+        large_arc: bool,
+        sweep: bool,
+        x: f32,
+        y: f32,
+        tolerance: f64,
+    );
 }
 
 impl PathBuilderExt for tiny_skia_path::PathBuilder {
@@ -327,6 +373,20 @@ impl PathBuilderExt for tiny_skia_path::PathBuilder {
         sweep: bool,
         x: f32,
         y: f32,
+    ) {
+        self.arc_to_tolerance(rx, ry, x_axis_rotation, large_arc, sweep, x, y, 0.1);
+    }
+
+    fn arc_to_tolerance(
+        &mut self,
+        rx: f32,
+        ry: f32,
+        x_axis_rotation: f32,
+        large_arc: bool,
+        sweep: bool,
+        x: f32,
+        y: f32,
+        tolerance: f64,
     ) {
         let prev = match self.last_point() {
             Some(v) => v,
@@ -344,7 +404,7 @@ impl PathBuilderExt for tiny_skia_path::PathBuilder {
 
         match kurbo::Arc::from_svg_arc(&svg_arc) {
             Some(arc) => {
-                arc.to_cubic_beziers(0.1, |p1, p2, p| {
+                arc.to_cubic_beziers(tolerance, |p1, p2, p| {
                     self.cubic_to(
                         p1.x as f32,
                         p1.y as f32,
