@@ -429,6 +429,15 @@ fn set_produces_a_single_keyframe_discrete_track() {
 }
 
 #[test]
+fn paced_rotate_transform_keeps_paced_easing() {
+    let tree = parse(
+        "<g><rect width='10' height='4'/><animateTransform attributeName='transform' type='rotate' values='0 240 180;30 240 180;300 240 180;360 240 180' calcMode='paced' dur='4s' fill='freeze'/></g>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    assert!(matches!(animation.easing().calc_mode(), CalcMode::Paced));
+}
+
+#[test]
 fn discrete_geometry_from_to_switches_at_half_duration() {
     let tree = parse(
         "<rect width='50' height='20'><animate attributeName='height' calcMode='discrete' from='200' to='20' dur='4s'/></rect>",
