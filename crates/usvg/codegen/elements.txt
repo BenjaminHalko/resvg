@@ -1,4 +1,8 @@
 a
+animate
+animateColor
+animateMotion
+animateTransform
 circle
 clipPath
 defs
@@ -41,6 +45,7 @@ polygon
 polyline
 radialGradient
 rect
+set
 stop
 style
 svg

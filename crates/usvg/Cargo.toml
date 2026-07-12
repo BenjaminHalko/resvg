@@ -61,3 +61,5 @@ system-fonts = ["fontdb/fs", "fontdb/fontconfig"]
 memmap-fonts = ["fontdb/memmap"]
 # Enables converting trees back to SVG.
 writer = ["xmlwriter", "base64"]
+# Enables SMIL and CSS animation parsing.
+animation = []

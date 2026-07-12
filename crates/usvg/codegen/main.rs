@@ -102,7 +102,11 @@ fn gen_map(
     let mut spec = String::new();
     fs::File::open(spec_path)?.read_to_string(&mut spec)?;
 
-    let names: Vec<&str> = spec.split('\n').filter(|s| !s.is_empty()).collect();
+    let names: Vec<&str> = spec
+        .split('\n')
+        .map(|s| s.trim_end_matches('\r'))
+        .filter(|s| !s.is_empty())
+        .collect();
 
     let joined_names = names.iter().map(|n| to_enum_name(n)).join(",\n    ");
 

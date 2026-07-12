@@ -680,6 +680,18 @@ impl EId {
             EId::LinearGradient | EId::RadialGradient | EId::Pattern
         )
     }
+
+    /// Checks if this is an SMIL animation element.
+    pub(crate) fn is_animation(&self) -> bool {
+        matches!(
+            self,
+            EId::Animate
+                | EId::AnimateColor
+                | EId::AnimateMotion
+                | EId::AnimateTransform
+                | EId::Set
+        )
+    }
 }
 
 impl AId {
@@ -752,6 +764,39 @@ impl AId {
                 | AId::WhiteSpace
                 | AId::WordSpacing
                 | AId::WritingMode
+        )
+    }
+
+    /// Checks if this is an animation attribute.
+    pub(crate) fn is_animation(&self) -> bool {
+        matches!(
+            self,
+            AId::AttributeName
+                | AId::AttributeType
+                | AId::Begin
+                | AId::Dur
+                | AId::End
+                | AId::Min
+                | AId::Max
+                | AId::CalcMode
+                | AId::KeyTimes
+                | AId::KeySplines
+                | AId::KeyPoints
+                | AId::Additive
+                | AId::Accumulate
+                | AId::RepeatCount
+                | AId::RepeatDur
+                | AId::Restart
+                | AId::Origin
+                | AId::Animation
+                | AId::AnimationName
+                | AId::AnimationDuration
+                | AId::AnimationDelay
+                | AId::AnimationIterationCount
+                | AId::AnimationDirection
+                | AId::AnimationFillMode
+                | AId::AnimationTimingFunction
+                | AId::AnimationPlayState
         )
     }
 
