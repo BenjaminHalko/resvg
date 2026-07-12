@@ -350,6 +350,8 @@ impl DatabaseExt for Database {
                             image.width as f32,
                             image.height as f32,
                         )?,
+                        #[cfg(feature = "animation")]
+                        animation: None,
                     },
                     x: image.x,
                     y: image.y,

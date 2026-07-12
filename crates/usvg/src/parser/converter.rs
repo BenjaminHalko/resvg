@@ -375,6 +375,8 @@ pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<
         filters: Vec::new(),
         #[cfg(feature = "text")]
         fontdb: opt.fontdb.clone(),
+        #[cfg(feature = "animation")]
+        view_box_animation: None,
     };
 
     if !svg.is_visible_element(opt) {
@@ -785,6 +787,8 @@ pub(crate) fn convert_group(
         layer_bounding_box: NonZeroRect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
         abs_layer_bounding_box: NonZeroRect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
         children: Vec::new(),
+        #[cfg(feature = "animation")]
+        animation: None,
     };
     collect_children(cache, &mut g);
 

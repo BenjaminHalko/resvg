@@ -280,6 +280,8 @@ pub struct BaseGradient {
     pub(crate) transform: Transform,
     pub(crate) spread_method: SpreadMethod,
     pub(crate) stops: Vec<Stop>,
+    #[cfg(feature = "animation")]
+    pub(crate) animation: Option<Box<animation::GradientAnimation>>,
 }
 
 impl BaseGradient {
@@ -308,6 +310,12 @@ impl BaseGradient {
     /// A list of `stop` elements.
     pub fn stops(&self) -> &[Stop] {
         &self.stops
+    }
+
+    /// Returns the animation data attached to this gradient, if any.
+    #[cfg(feature = "animation")]
+    pub fn animation(&self) -> Option<&animation::GradientAnimation> {
+        self.animation.as_deref()
     }
 }
 
@@ -1044,6 +1052,8 @@ pub struct Group {
     pub(crate) layer_bounding_box: NonZeroRect,
     pub(crate) abs_layer_bounding_box: NonZeroRect,
     pub(crate) children: Vec<Node>,
+    #[cfg(feature = "animation")]
+    pub(crate) animation: Option<Box<animation::NodeAnimation>>,
 }
 
 impl Group {
@@ -1067,6 +1077,8 @@ impl Group {
             layer_bounding_box: NonZeroRect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
             abs_layer_bounding_box: NonZeroRect::from_xywh(0.0, 0.0, 1.0, 1.0).unwrap(),
             children: Vec::new(),
+            #[cfg(feature = "animation")]
+            animation: None,
         }
     }
 
@@ -1190,6 +1202,18 @@ impl Group {
         &self.children
     }
 
+    /// Returns the animation data attached to this node, if any.
+    #[cfg(feature = "animation")]
+    pub fn animation(&self) -> Option<&animation::NodeAnimation> {
+        self.animation.as_deref()
+    }
+
+    /// Returns the animations on this node.
+    #[cfg(feature = "animation")]
+    pub fn animations(&self) -> &[Arc<animation::Animation>] {
+        self.animation.as_ref().map_or(&[], |a| a.animations())
+    }
+
     /// Checks if this group should be isolated during rendering.
     pub fn should_isolate(&self) -> bool {
         self.isolate
@@ -1285,6 +1309,8 @@ pub struct Path {
     pub(crate) abs_bounding_box: Rect,
     pub(crate) stroke_bounding_box: Rect,
     pub(crate) abs_stroke_bounding_box: Rect,
+    #[cfg(feature = "animation")]
+    pub(crate) animation: Option<Box<animation::NodeAnimation>>,
 }
 
 impl Path {
@@ -1343,6 +1369,8 @@ impl Path {
             abs_bounding_box,
             stroke_bounding_box,
             abs_stroke_bounding_box,
+            #[cfg(feature = "animation")]
+            animation: None,
         })
     }
 
@@ -1433,6 +1461,18 @@ impl Path {
         self.abs_stroke_bounding_box
     }
 
+    /// Returns the animation data attached to this node, if any.
+    #[cfg(feature = "animation")]
+    pub fn animation(&self) -> Option<&animation::NodeAnimation> {
+        self.animation.as_deref()
+    }
+
+    /// Returns the animations on this node.
+    #[cfg(feature = "animation")]
+    pub fn animations(&self) -> &[Arc<animation::Animation>] {
+        self.animation.as_ref().map_or(&[], |a| a.animations())
+    }
+
     fn calculate_stroke_bbox(stroke: Option<&Stroke>, path: &tiny_skia_path::Path) -> Option<Rect> {
         let mut stroke = stroke?.to_tiny_skia();
         // According to the spec, dash should not be accounted during bbox calculation.
@@ -1512,6 +1552,8 @@ pub struct Image {
     pub(crate) kind: ImageKind,
     pub(crate) abs_transform: Transform,
     pub(crate) abs_bounding_box: NonZeroRect,
+    #[cfg(feature = "animation")]
+    pub(crate) animation: Option<Box<animation::NodeAnimation>>,
 }
 
 impl Image {
@@ -1573,6 +1615,18 @@ impl Image {
         self.abs_bounding_box.to_rect()
     }
 
+    /// Returns the animation data attached to this node, if any.
+    #[cfg(feature = "animation")]
+    pub fn animation(&self) -> Option<&animation::NodeAnimation> {
+        self.animation.as_deref()
+    }
+
+    /// Returns the animations on this node.
+    #[cfg(feature = "animation")]
+    pub fn animations(&self) -> &[Arc<animation::Animation>] {
+        self.animation.as_ref().map_or(&[], |a| a.animations())
+    }
+
     fn subroots(&self, f: &mut dyn FnMut(&Group)) {
         if let ImageKind::SVG(ref tree) = self.kind {
             f(&tree.root);
@@ -1594,6 +1648,8 @@ pub struct Tree {
     pub(crate) filters: Vec<Arc<filter::Filter>>,
     #[cfg(feature = "text")]
     pub(crate) fontdb: Arc<fontdb::Database>,
+    #[cfg(feature = "animation")]
+    pub(crate) view_box_animation: Option<Box<animation::ViewBoxAnimation>>,
 }
 
 impl Tree {
@@ -1671,6 +1727,12 @@ impl Tree {
     #[cfg(feature = "text")]
     pub fn fontdb(&self) -> &Arc<fontdb::Database> {
         &self.fontdb
+    }
+
+    /// Returns the view box animation, if any.
+    #[cfg(feature = "animation")]
+    pub fn view_box_animation(&self) -> Option<&animation::ViewBoxAnimation> {
+        self.view_box_animation.as_deref()
     }
 
     pub(crate) fn collect_paint_servers(&mut self) {
@@ -1914,5 +1976,18 @@ impl Group {
         self.abs_layer_bounding_box = self.layer_bounding_box.transform(self.abs_transform)?;
 
         Some(())
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "animation")]
+mod animation_tests {
+    use super::*;
+
+    #[test]
+    fn animation_accessors_default_none() {
+        let g = Group::empty();
+        assert!(g.animation().is_none());
+        assert!(g.animations().is_empty());
     }
 }

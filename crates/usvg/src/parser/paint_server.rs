@@ -73,6 +73,8 @@ fn convert_linear(node: SvgNode, state: &converter::State) -> Option<ServerOrCol
             transform,
             spread_method: convert_spread_method(node),
             stops,
+            #[cfg(feature = "animation")]
+            animation: None,
         },
     };
 
@@ -138,6 +140,8 @@ fn convert_radial(node: SvgNode, state: &converter::State) -> Option<ServerOrCol
             transform,
             spread_method,
             stops,
+            #[cfg(feature = "animation")]
+            animation: None,
         },
     };
 
@@ -846,6 +850,8 @@ fn process_context_paint(
                     transform,
                     spread_method: lg.spread_method,
                     stops: lg.stops.clone(),
+                    #[cfg(feature = "animation")]
+                    animation: None,
                 },
             }));
         }
@@ -864,6 +870,8 @@ fn process_context_paint(
                     transform,
                     spread_method: rg.spread_method,
                     stops: rg.stops.clone(),
+                    #[cfg(feature = "animation")]
+                    animation: None,
                 },
             }));
         }
@@ -976,6 +984,8 @@ impl Paint {
                             transform,
                             spread_method: lg.spread_method,
                             stops: lg.stops.clone(),
+                            #[cfg(feature = "animation")]
+                            animation: None,
                         },
                     });
                 }
@@ -999,6 +1009,8 @@ impl Paint {
                             transform,
                             spread_method: rg.spread_method,
                             stops: rg.stops.clone(),
+                            #[cfg(feature = "animation")]
+                            animation: None,
                         },
                     });
                 }

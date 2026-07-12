@@ -246,6 +246,8 @@ pub(crate) fn convert_inner(
         kind,
         abs_transform,
         abs_bounding_box,
+        #[cfg(feature = "animation")]
+        animation: None,
     })));
     g.transform = image_ts;
     g.abs_transform = abs_transform;
