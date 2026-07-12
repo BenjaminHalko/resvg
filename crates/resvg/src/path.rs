@@ -5,6 +5,8 @@ use crate::render::Context;
 
 #[cfg(feature = "animation")]
 use crate::animation::compose::{self, SampledOverrides};
+#[cfg(feature = "animation")]
+use crate::animation::interpolate::SampledValue;
 
 pub fn render(
     path: &usvg::Path,
@@ -135,10 +137,20 @@ pub fn fill_path(
                 paint.set_color_rgba8(c.red, c.green, c.blue, opacity.to_u8());
             }
             usvg::Paint::LinearGradient(lg) => {
-                paint.shader = convert_linear_gradient(lg, opacity)?;
+                paint.shader = convert_linear_gradient(
+                    lg,
+                    opacity,
+                    #[cfg(feature = "animation")]
+                    ctx.time,
+                )?;
             }
             usvg::Paint::RadialGradient(rg) => {
-                paint.shader = convert_radial_gradient(rg, opacity)?;
+                paint.shader = convert_radial_gradient(
+                    rg,
+                    opacity,
+                    #[cfg(feature = "animation")]
+                    ctx.time,
+                )?;
             }
             usvg::Paint::Pattern(pattern) => {
                 let (patt_pix, patt_ts) = render_pattern_pixmap(pattern, ctx, transform)?;
@@ -196,10 +208,20 @@ fn stroke_path(
                 paint.set_color_rgba8(c.red, c.green, c.blue, opacity.to_u8());
             }
             usvg::Paint::LinearGradient(lg) => {
-                paint.shader = convert_linear_gradient(lg, opacity)?;
+                paint.shader = convert_linear_gradient(
+                    lg,
+                    opacity,
+                    #[cfg(feature = "animation")]
+                    ctx.time,
+                )?;
             }
             usvg::Paint::RadialGradient(rg) => {
-                paint.shader = convert_radial_gradient(rg, opacity)?;
+                paint.shader = convert_radial_gradient(
+                    rg,
+                    opacity,
+                    #[cfg(feature = "animation")]
+                    ctx.time,
+                )?;
             }
             usvg::Paint::Pattern(pattern) => {
                 let (patt_pix, patt_ts) = render_pattern_pixmap(pattern, ctx, transform)?;
@@ -379,14 +401,23 @@ fn build_stroke(
 fn convert_linear_gradient(
     gradient: &usvg::LinearGradient,
     opacity: usvg::Opacity,
+    #[cfg(feature = "animation")] time: Option<f32>,
 ) -> Option<tiny_skia::Shader<'_>> {
-    let (mode, points) = convert_base_gradient(gradient, opacity)?;
+    let (mode, points) = convert_base_gradient(
+        gradient,
+        opacity,
+        #[cfg(feature = "animation")]
+        time.zip(gradient.animation()),
+    )?;
 
     let shader = tiny_skia::LinearGradient::new(
         (gradient.x1(), gradient.y1()).into(),
         (gradient.x2(), gradient.y2()).into(),
         points,
         mode,
+        #[cfg(feature = "animation")]
+        gradient_transform(gradient, time),
+        #[cfg(not(feature = "animation"))]
         gradient.transform(),
     )?;
 
@@ -396,8 +427,19 @@ fn convert_linear_gradient(
 fn convert_radial_gradient(
     gradient: &usvg::RadialGradient,
     opacity: usvg::Opacity,
+    #[cfg(feature = "animation")] time: Option<f32>,
 ) -> Option<tiny_skia::Shader<'_>> {
-    let (mode, points) = convert_base_gradient(gradient, opacity)?;
+    #[cfg(feature = "animation")]
+    if let Some(animation) = gradient.animation() {
+        return convert_animated_radial(gradient, opacity, animation, time);
+    }
+
+    let (mode, points) = convert_base_gradient(
+        gradient,
+        opacity,
+        #[cfg(feature = "animation")]
+        None,
+    )?;
 
     let shader = tiny_skia::RadialGradient::new(
         (gradient.fx(), gradient.fy()).into(),
@@ -412,9 +454,55 @@ fn convert_radial_gradient(
     Some(shader)
 }
 
+/// Rebuilds a radial gradient at the query time.
+///
+/// The base radius comes from `underlying_r` when a carrier was synthesized for a
+/// non-positive static `r`, otherwise from the gradient's own radius. An effective
+/// radius `<= 0` paints the last stop as a solid fill, per SVG's `r = 0` rule.
+#[cfg(feature = "animation")]
+fn convert_animated_radial<'a>(
+    gradient: &'a usvg::RadialGradient,
+    opacity: usvg::Opacity,
+    animation: &'a usvg::GradientAnimation,
+    time: Option<f32>,
+) -> Option<tiny_skia::Shader<'a>> {
+    let overrides = time.map(|t| sample_animation_list(animation.animations(), t));
+    let base_radius = animation
+        .underlying_r()
+        .unwrap_or_else(|| gradient.r().get());
+    let radius = overrides
+        .as_ref()
+        .and_then(gradient_geometry)
+        .unwrap_or(base_radius);
+
+    let sample = time.map(|t| (t, animation));
+    if radius <= 0.0 {
+        return Some(tiny_skia::Shader::SolidColor(last_stop_color(
+            gradient, opacity, sample,
+        )));
+    }
+
+    let transform = overrides
+        .as_ref()
+        .and_then(|overrides| overrides.transform)
+        .unwrap_or_else(|| gradient.transform());
+    let (mode, points) = convert_base_gradient(gradient, opacity, sample)?;
+
+    tiny_skia::RadialGradient::new(
+        (gradient.fx(), gradient.fy()).into(),
+        gradient.fr().get(),
+        (gradient.cx(), gradient.cy()).into(),
+        radius,
+        points,
+        mode,
+        transform,
+    )
+}
+
 fn convert_base_gradient(
     gradient: &usvg::BaseGradient,
     opacity: usvg::Opacity,
+    #[cfg(feature = "animation")] sample: Option<(f32, &usvg::GradientAnimation)>,
 ) -> Option<(tiny_skia::SpreadMode, Vec<tiny_skia::GradientStop>)> {
     let mode = match gradient.spread_method() {
         usvg::SpreadMethod::Pad => tiny_skia::SpreadMode::Pad,
@@ -423,6 +511,8 @@ fn convert_base_gradient(
     };
 
     let mut points = Vec::with_capacity(gradient.stops().len());
+
+    #[cfg(not(feature = "animation"))]
     for stop in gradient.stops() {
         let alpha = stop.opacity() * opacity;
         let color = tiny_skia::Color::from_rgba8(
@@ -434,7 +524,111 @@ fn convert_base_gradient(
         points.push(tiny_skia::GradientStop::new(stop.offset().get(), color));
     }
 
+    #[cfg(feature = "animation")]
+    {
+        let mut previous_offset = 0.0;
+        for (index, stop) in gradient.stops().iter().enumerate() {
+            let (color, offset) = effective_stop(stop, opacity, sample, index, previous_offset);
+            previous_offset = offset;
+            points.push(tiny_skia::GradientStop::new(offset, color));
+        }
+    }
+
     Some((mode, points))
+}
+
+/// Samples a gradient's animation list at `t` through the node sandwich, whose
+/// `gradient_overrides` slot collects the stop and geometry tracks.
+#[cfg(feature = "animation")]
+fn sample_animation_list(
+    animations: &[std::sync::Arc<usvg::Animation>],
+    t: f32,
+) -> SampledOverrides {
+    let node = usvg::NodeAnimation::new(animations.to_vec(), false, None, None, None, None);
+    compose::sample_overrides(&node, t)
+}
+
+/// The gradient-level geometry override, applied as the radial `r`.
+#[cfg(feature = "animation")]
+fn gradient_geometry(overrides: &SampledOverrides) -> Option<f32> {
+    overrides
+        .gradient_overrides
+        .iter()
+        .rev()
+        .find_map(|(_, value)| match value {
+            SampledValue::GradientGeometry(radius) => Some(*radius),
+            _ => None,
+        })
+}
+
+/// The effective gradient transform: a sampled `gradientTransform` replaces the
+/// static one, as an animated node transform replaces its base.
+#[cfg(feature = "animation")]
+fn gradient_transform(gradient: &usvg::BaseGradient, time: Option<f32>) -> tiny_skia::Transform {
+    time.zip(gradient.animation())
+        .map(|(t, animation)| sample_animation_list(animation.animations(), t))
+        .and_then(|overrides| overrides.transform)
+        .unwrap_or_else(|| gradient.transform())
+}
+
+/// The last stop's effective color, painted solid when a radial radius is
+/// non-positive.
+#[cfg(feature = "animation")]
+fn last_stop_color(
+    gradient: &usvg::RadialGradient,
+    opacity: usvg::Opacity,
+    sample: Option<(f32, &usvg::GradientAnimation)>,
+) -> tiny_skia::Color {
+    let index = gradient.stops().len().saturating_sub(1);
+    effective_stop(&gradient.stops()[index], opacity, sample, index, 0.0).0
+}
+
+/// The tiny-skia stop for a source stop at the query time: sampled color,
+/// opacity, and offset fold over the static values. The offset keeps document
+/// order and is monotonically clamped to its predecessor, never re-sorted.
+#[cfg(feature = "animation")]
+fn effective_stop(
+    stop: &usvg::Stop,
+    opacity: usvg::Opacity,
+    sample: Option<(f32, &usvg::GradientAnimation)>,
+    index: usize,
+    previous_offset: f32,
+) -> (tiny_skia::Color, f32) {
+    let mut color = None;
+    let mut stop_opacity = None;
+    let mut offset = stop.offset().get();
+
+    if let Some((t, animation)) = sample {
+        if let Some(source) = animation.source_index_of(index) {
+            let overrides = sample_animation_list(animation.source_stops()[source].animations(), t);
+            for (_, value) in &overrides.gradient_overrides {
+                match value {
+                    SampledValue::Color(sampled) => color = Some(*sampled),
+                    SampledValue::Opacity(sampled) => stop_opacity = Some(*sampled),
+                    SampledValue::GradientGeometry(sampled) => offset = *sampled,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let alpha = match (color, stop_opacity) {
+        (None, None) => (stop.opacity() * opacity).to_u8(),
+        _ => {
+            let color_alpha = color.map_or(1.0, |c| f32::from(c.alpha) / 255.0);
+            let stop_alpha = stop_opacity.unwrap_or_else(|| stop.opacity().get());
+            ((color_alpha * stop_alpha * opacity.get()).clamp(0.0, 1.0) * 255.0).round() as u8
+        }
+    };
+    let (red, green, blue) = color.map_or(
+        (stop.color().red, stop.color().green, stop.color().blue),
+        |c| (c.red, c.green, c.blue),
+    );
+
+    (
+        tiny_skia::Color::from_rgba8(red, green, blue, alpha),
+        offset.clamp(previous_offset, 1.0),
+    )
 }
 
 fn render_pattern_pixmap(

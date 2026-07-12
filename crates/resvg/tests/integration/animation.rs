@@ -10,6 +10,15 @@ fn alpha_at(pixmap: &tiny_skia::Pixmap, x: u32, y: u32) -> u8 {
     pixmap.pixel(x, y).map(|p| p.alpha()).unwrap_or(0)
 }
 
+/// The `(red, green, blue)` of a single pixel, or zeros when out of bounds. The
+/// sampled pixels are opaque, so the premultiplied channels equal the straight ones.
+fn rgb_at(pixmap: &tiny_skia::Pixmap, x: u32, y: u32) -> (u8, u8, u8) {
+    pixmap
+        .pixel(x, y)
+        .map(|p| (p.red(), p.green(), p.blue()))
+        .unwrap_or((0, 0, 0))
+}
+
 /// The inclusive `(min_x, min_y, max_x, max_y)` bounds of non-transparent pixels.
 fn nonzero_bbox(pixmap: &tiny_skia::Pixmap) -> Option<(u32, u32, u32, u32)> {
     let mut bbox: Option<(u32, u32, u32, u32)> = None;
@@ -192,6 +201,117 @@ fn fill_carrier_preserves_opacity_and_rule() {
     assert!((ring as i16 - 128).abs() <= 12, "expected ~128 ring alpha, got {ring}");
     let center = alpha_at(&pixmap, 30, 30);
     assert!(center < 20, "even-odd center must be a hole, got {center}");
+}
+
+#[test]
+fn animated_stop_color_changes_hue() {
+    // A gradient stop animates red -> lime: a pixel near that stop shifts from a
+    // red-dominant hue at t=0 to a green-dominant one at the frozen end.
+    let svg = r#"<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="40" y2="0">
+                <stop offset="0" stop-color="red">
+                    <animate attributeName="stop-color" from="red" to="lime"
+                        begin="0s" dur="4s" fill="freeze"/>
+                </stop>
+                <stop offset="1" stop-color="blue"/>
+            </linearGradient>
+        </defs>
+        <rect width="40" height="40" fill="url(#g)"/>
+    </svg>"#;
+    let (r0, g0, _) = rgb_at(&render_at_pixmap(svg, 0.0), 2, 20);
+    let (r1, g1, _) = rgb_at(&render_at_pixmap(svg, 4.0), 2, 20);
+    assert!(r0 > 200 && g0 < 60, "red-dominant at t=0, got ({r0}, {g0})");
+    assert!(g1 > 200 && r1 < 60, "green-dominant at t=end, got ({r1}, {g1})");
+}
+
+#[test]
+fn crossing_stop_offset_is_clamped_not_sorted() {
+    // The blue stop animates its offset from 0.7 down past the red stop at 0.3.
+    // The monotonic clamp pins it to 0.3, so the left edge stays red; a re-sort
+    // would put blue first and paint the left edge blue.
+    let svg = r#"<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="40" y2="0">
+                <stop offset="0.3" stop-color="red"/>
+                <stop offset="0.7" stop-color="blue">
+                    <animate attributeName="offset" from="0.7" to="0"
+                        begin="0s" dur="4s" fill="freeze"/>
+                </stop>
+            </linearGradient>
+        </defs>
+        <rect width="40" height="40" fill="url(#g)"/>
+    </svg>"#;
+    // At the frozen end the sampled offset is 0, clamped up to the predecessor's
+    // 0.3, so the left edge is red (clamp), not blue (sort).
+    let (lr, _, lb) = rgb_at(&render_at_pixmap(svg, 4.0), 2, 20);
+    assert!(lr > 150 && lb < 100, "clamped left edge stays red, got ({lr}, {lb})");
+    // The animation still moves the transition: a mid pixel that is purple at t=0
+    // turns blue once the transition collapses onto 0.3.
+    let (_, _, mb0) = rgb_at(&render_at_pixmap(svg, 0.0), 20, 20);
+    let (_, _, mb1) = rgb_at(&render_at_pixmap(svg, 4.0), 20, 20);
+    assert!(mb1 > mb0 + 60, "mid pixel gets bluer as the stop crosses, {mb0} -> {mb1}");
+}
+
+#[test]
+fn single_stop_gradient_animates_color() {
+    // A one-stop gradient is synthesized into two stops that share the source
+    // stop's tracks, so the whole fill animates red -> lime.
+    let svg = r#"<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="40" y2="0">
+                <stop offset="0" stop-color="red">
+                    <animate attributeName="stop-color" from="red" to="lime"
+                        begin="0s" dur="4s" fill="freeze"/>
+                </stop>
+            </linearGradient>
+        </defs>
+        <rect width="40" height="40" fill="url(#g)"/>
+    </svg>"#;
+    let (r0, g0, _) = rgb_at(&render_at_pixmap(svg, 0.0), 20, 20);
+    let (r1, g1, _) = rgb_at(&render_at_pixmap(svg, 4.0), 20, 20);
+    assert!(r0 > 200 && g0 < 60, "solid red at t=0, got ({r0}, {g0})");
+    assert!(g1 > 200 && r1 < 60, "solid lime at t=end, got ({r1}, {g1})");
+}
+
+#[test]
+fn radial_zero_radius_falls_back_to_last_stop() {
+    // A radial gradient with static r=0 and an animated r paints the last stop as
+    // a solid color while the effective radius is non-positive, and a real
+    // gradient once the radius grows.
+    let svg = r#"<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <radialGradient id="g" gradientUnits="userSpaceOnUse" cx="30" cy="30" r="0">
+                <stop offset="0" stop-color="red"/>
+                <stop offset="1" stop-color="blue"/>
+                <animate attributeName="r" from="0" to="50" begin="0s" dur="4s" fill="freeze"/>
+            </radialGradient>
+        </defs>
+        <rect width="60" height="60" fill="url(#g)"/>
+    </svg>"#;
+    // Plain render and t=0: effective r <= 0, so the last stop (blue) fills solid.
+    let (sr, _, sb) = rgb_at(&render_pixmap(svg), 30, 30);
+    assert!(sb > 200 && sr < 60, "static render is last-stop blue, got ({sr}, {sb})");
+    let (zr, _, zb) = rgb_at(&render_at_pixmap(svg, 0.0), 30, 30);
+    assert!(zb > 200 && zr < 60, "t=0 is last-stop blue, got ({zr}, {zb})");
+    // Mid-animation the radius is positive: the center is the first stop (red).
+    let (mr, _, mb) = rgb_at(&render_at_pixmap(svg, 2.0), 30, 30);
+    assert!(mr > 200 && mb < 60, "positive radius renders the gradient, got ({mr}, {mb})");
+
+    // With fill=remove the animation stops contributing past its end, so the
+    // radius returns to its 0 base and the solid last-stop color returns.
+    let removed = r#"<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <radialGradient id="g" gradientUnits="userSpaceOnUse" cx="30" cy="30" r="0">
+                <stop offset="0" stop-color="red"/>
+                <stop offset="1" stop-color="blue"/>
+                <animate attributeName="r" from="0" to="50" begin="0s" dur="4s" fill="remove"/>
+            </radialGradient>
+        </defs>
+        <rect width="60" height="60" fill="url(#g)"/>
+    </svg>"#;
+    let (rr, _, rb) = rgb_at(&render_at_pixmap(removed, 10.0), 30, 30);
+    assert!(rb > 200 && rr < 60, "fill=remove returns to last-stop blue, got ({rr}, {rb})");
 }
 
 /// A 10x10 solid green raster stand-in, embedded as an SVG data URI.
