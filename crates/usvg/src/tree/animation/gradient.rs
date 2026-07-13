@@ -3,40 +3,18 @@
 
 use std::sync::Arc;
 
-use crate::NormalizedF32;
-
 use super::Animation;
 
 /// A source stop for gradient animation.
 #[derive(Clone, Debug)]
 pub struct SourceStop {
-    pub(crate) base_offset: NormalizedF32,
-    pub(crate) synthesized: bool,
     pub(crate) animations: Vec<Arc<Animation>>,
 }
 
 impl SourceStop {
     /// Creates a new `SourceStop`.
-    pub fn new(
-        base_offset: NormalizedF32,
-        synthesized: bool,
-        animations: Vec<Arc<Animation>>,
-    ) -> Self {
-        Self {
-            base_offset,
-            synthesized,
-            animations,
-        }
-    }
-
-    /// The unmodified source offset.
-    pub fn base_offset(&self) -> NormalizedF32 {
-        self.base_offset
-    }
-
-    /// Whether this stop was synthesized (not present in the source document).
-    pub fn synthesized(&self) -> bool {
-        self.synthesized
+    pub fn new(animations: Vec<Arc<Animation>>) -> Self {
+        Self { animations }
     }
 
     /// The animations on this stop.
@@ -53,7 +31,7 @@ pub struct GradientAnimation {
     pub(crate) focal_x_is_omitted: bool,
     pub(crate) focal_y_is_omitted: bool,
     pub(crate) source_stops: Vec<SourceStop>,
-    pub(crate) source_indices: Vec<Option<usize>>,
+    pub(crate) source_indices: Vec<usize>,
 }
 
 impl GradientAnimation {
@@ -64,7 +42,7 @@ impl GradientAnimation {
         focal_x_is_omitted: bool,
         focal_y_is_omitted: bool,
         source_stops: Vec<SourceStop>,
-        source_indices: Vec<Option<usize>>,
+        source_indices: Vec<usize>,
     ) -> Self {
         Self {
             animations,
@@ -103,6 +81,6 @@ impl GradientAnimation {
 
     /// Returns the source stop index for a given converted stop index.
     pub fn source_index_of(&self, stop_index: usize) -> Option<usize> {
-        self.source_indices.get(stop_index).copied().flatten()
+        self.source_indices.get(stop_index).copied()
     }
 }

@@ -532,6 +532,57 @@ fn gradient_stop_color_track_offsets_are_readable() {
 }
 
 #[test]
+fn one_stop_gradient_maps_both_carrier_stops_to_source_stop() {
+    let tree = parse(
+        "<defs><linearGradient id='g'><stop offset='0.25' stop-color='red'><animate attributeName='stop-color' from='red' to='lime' dur='1s'/></stop></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>",
+    );
+    let gradient = &tree.linear_gradients()[0];
+    let animation = gradient.animation().unwrap();
+
+    assert_eq!(gradient.stops().len(), 2);
+    assert_eq!(animation.source_stops().len(), 1);
+    assert_eq!(animation.source_index_of(0), Some(0));
+    assert_eq!(animation.source_index_of(1), Some(0));
+    assert_eq!(animation.source_index_of(2), None);
+}
+
+#[test]
+fn multi_stop_gradient_keeps_one_to_one_source_mapping() {
+    let tree = parse(
+        "<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='lime' dur='1s'/></stop><stop offset='1' stop-color='blue'><animate attributeName='stop-opacity' from='1' to='0.25' dur='1s'/></stop></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>",
+    );
+    let gradient = &tree.linear_gradients()[0];
+    let animation = gradient.animation().unwrap();
+
+    assert_eq!(gradient.stops().len(), 2);
+    assert_eq!(animation.source_stops().len(), 2);
+    assert_eq!(animation.source_index_of(0), Some(0));
+    assert_eq!(animation.source_index_of(1), Some(1));
+    assert_eq!(animation.source_index_of(2), None);
+}
+
+#[test]
+fn gradient_source_stop_keeps_color_opacity_and_offset_tracks() {
+    let tree = parse(
+        "<defs><linearGradient id='g'><stop offset='0.2' stop-color='red' stop-opacity='1'><animate attributeName='stop-color' from='red' to='lime' dur='1s'/><animate attributeName='stop-opacity' from='1' to='0.25' dur='1s'/><animate attributeName='offset' from='0.2' to='0.8' dur='1s'/></stop><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>",
+    );
+    let gradient = &tree.linear_gradients()[0];
+    let animations = gradient.animation().unwrap().source_stops()[0].animations();
+
+    assert_eq!(animations.len(), 3);
+    assert!(matches!(animations[0].kind(), AnimationKind::StopColor(_)));
+    assert!(matches!(
+        animations[1].kind(),
+        AnimationKind::StopOpacity(_)
+    ));
+    let AnimationKind::StopOffset(track) = animations[2].kind() else {
+        panic!("expected an offset track");
+    };
+    assert_eq!(track.keyframes()[0].value().get(), 0.2);
+    assert_eq!(track.keyframes()[1].value().get(), 0.8);
+}
+
+#[test]
 fn radial_gradient_geometry_track_stays_native() {
     let tree = parse(
         "<defs><radialGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animate attributeName='r' from='0.2' to='0.8' dur='1s'/></radialGradient></defs><rect width='10' height='10' fill='url(#g)'/>",

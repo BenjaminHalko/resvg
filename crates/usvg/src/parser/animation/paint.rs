@@ -62,7 +62,7 @@ pub(crate) fn preserve_animated_gradient(
     let transform = node.resolve_transform(AId::GradientTransform, state);
     let spread_method = convert_spread_method(node);
 
-    let mut source_indices: Vec<Option<usize>> = (0..stops.len()).map(Some).collect();
+    let mut source_indices: Vec<usize> = (0..stops.len()).collect();
     if stops.len() < 2 {
         let mut carrier = stops[0];
         carrier.offset = StopOffset::new_clamped(1.0);
@@ -202,11 +202,7 @@ fn collect_source_stops(
             .attribute::<Opacity>(AId::StopOpacity)
             .unwrap_or(Opacity::ONE);
 
-        source_stops.push(SourceStop::new(
-            offset,
-            false,
-            collect_node_animations(stop, state, cache),
-        ));
+        source_stops.push(SourceStop::new(collect_node_animations(stop, state, cache)));
         stops.push(Stop {
             offset,
             color,
