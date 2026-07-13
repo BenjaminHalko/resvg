@@ -32,9 +32,9 @@ pub use timing::{
     CalcMode, Direction, Easing, Interval, KeyOffset, StepPosition, TimedInterval, Timing,
     TimingFunction,
 };
+pub(crate) use tracks::{CssBox, CssOrigin, OriginComponent};
 pub use tracks::{
-    Keyframe, MotionRotate, MotionTrack, PathKeyframe, PathTrack, Track, TransformBox,
-    TransformFunction, TransformKind, TransformOrigin, TransformOriginValue, TransformTrack,
+    Keyframe, MotionRotate, MotionTrack, PathKeyframe, PathTrack, Track, TransformFunction,
 };
 pub use view_box::ViewBoxAnimation;
 
@@ -51,18 +51,11 @@ mod tests {
         pb.line_to(1.0, 1.0);
         let path = Arc::new(pb.finish().unwrap());
 
-        let _ = AnimationKind::Transform(TransformTrack::Smil {
-            kind: TransformKind::Translate,
-            keyframes: vec![],
-        });
-        let _ = AnimationKind::GradientTransform(TransformTrack::Css {
-            keyframes: vec![],
-            origin: TransformOrigin::new(
-                TransformOriginValue::Length(0.0),
-                TransformOriginValue::Percent(50.0),
-            ),
-            box_: TransformBox::ViewBox,
-        });
+        let _ =
+            AnimationKind::Transform(Track::new(Vec::<Keyframe<Vec<TransformFunction>>>::new()));
+        let _ = AnimationKind::GradientTransform(Track::new(
+            Vec::<Keyframe<Vec<TransformFunction>>>::new(),
+        ));
         let _ = AnimationKind::Motion(MotionTrack::new(path, None, MotionRotate::Auto));
         let _ = AnimationKind::Opacity(Track::new(vec![]));
         let _ = AnimationKind::Fill(Track::new(vec![]));

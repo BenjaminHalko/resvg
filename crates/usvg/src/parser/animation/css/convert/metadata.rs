@@ -1,42 +1,49 @@
 // Copyright 2026 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use crate::parser::converter;
 use crate::parser::svgtree::{AId, SvgNode};
 use crate::tree::animation::{
-    Direction, Interval, TimedInterval, Timing, TransformBox, TransformOrigin, TransformOriginValue,
+    CssBox, CssOrigin, Direction, Interval, OriginComponent, TimedInterval, Timing,
 };
 
 use super::super::scanner::split_top_level;
 use super::timing::{parse_finite, strip_suffix_ci};
 
-pub(super) fn read_transform_origin(node: SvgNode) -> TransformOrigin {
+pub(super) fn read_transform_origin(node: SvgNode, state: &converter::State) -> CssOrigin {
     match node.try_attribute::<svgtypes::TransformOrigin>(AId::TransformOrigin) {
-        Some(origin) => TransformOrigin::new(
-            origin_component(origin.x_offset),
-            origin_component(origin.y_offset),
+        Some(origin) => CssOrigin::new(
+            origin_component(origin.x_offset, node, state),
+            origin_component(origin.y_offset, node, state),
+            read_transform_box(node),
         ),
-        None => TransformOrigin::new(
-            TransformOriginValue::Percent(50.0),
-            TransformOriginValue::Percent(50.0),
+        None => CssOrigin::new(
+            OriginComponent::Percent(50.0),
+            OriginComponent::Percent(50.0),
+            read_transform_box(node),
         ),
     }
 }
 
-fn origin_component(length: svgtypes::Length) -> TransformOriginValue {
+fn origin_component(
+    length: svgtypes::Length,
+    node: SvgNode,
+    state: &converter::State,
+) -> OriginComponent {
     if length.unit == svgtypes::LengthUnit::Percent {
-        TransformOriginValue::Percent(length.number as f32)
+        OriginComponent::Percent(length.number as f32)
     } else {
-        TransformOriginValue::Length(length.number as f32)
+        OriginComponent::Length(node.convert_user_length(AId::TransformOrigin, state, length))
     }
 }
 
-pub(super) fn read_transform_box(node: SvgNode) -> TransformBox {
+pub(super) fn read_transform_box(node: SvgNode) -> CssBox {
     match node.try_attribute::<&str>(AId::TransformBox).map(str::trim) {
-        Some("content-box") => TransformBox::ContentBox,
-        Some("border-box") => TransformBox::BorderBox,
-        Some("fill-box") => TransformBox::FillBox,
-        Some("stroke-box") => TransformBox::StrokeBox,
-        _ => TransformBox::ViewBox,
+        Some("content-box") => CssBox::Content,
+        Some("border-box") => CssBox::Border,
+        Some("fill-box") => CssBox::Fill,
+        Some("stroke-box") => CssBox::Stroke,
+        _ => CssBox::View,
     }
 }
 

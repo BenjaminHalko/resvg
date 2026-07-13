@@ -3,14 +3,14 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::NormalizedF32;
 use crate::tree::animation::{
-    Accumulate, Additive, AnimationKind, CalcMode, TransformKind, TransformTrack,
+    Accumulate, Additive, AnimationKind, CalcMode, Keyframe, Track, TransformFunction,
 };
+use crate::NormalizedF32;
 
-use super::forms::{Forms, build_forms};
+use super::forms::{build_forms, Forms};
 use super::stroke::parse_number_list;
-use super::{BaseValue, SmilValues, geometry, opacity, paint, presentation, stroke};
+use super::{geometry, opacity, paint, presentation, stroke, BaseValue, SmilValues};
 
 pub(super) struct AttributeContext<'a> {
     pub(super) forms: &'a Forms<'a>,
@@ -19,6 +19,15 @@ pub(super) struct AttributeContext<'a> {
     pub(super) accumulate: Accumulate,
     pub(super) calc_mode: CalcMode,
     pub(super) base_value: &'a BaseValue,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SmilTransformType {
+    Translate,
+    Scale,
+    Rotate,
+    SkewX,
+    SkewY,
 }
 
 /// Parses a SMIL `<animate>`/`<set>`/`<animateColor>` value animation.
@@ -86,7 +95,7 @@ pub(crate) fn parse_smil_values(
 ///
 /// `gradient` selects between the `transform` and `gradientTransform` targets.
 pub(crate) fn parse_smil_transform_values(
-    kind: TransformKind,
+    kind: SmilTransformType,
     gradient: bool,
     values_str: Option<&str>,
     from_str: Option<&str>,
@@ -122,7 +131,7 @@ pub(crate) fn parse_smil_transform_values(
         },
     )?;
 
-    let track = TransformTrack::Smil { kind, keyframes };
+    let track = lower_smil_transform(kind, keyframes);
     let kind = if gradient {
         AnimationKind::GradientTransform(track)
     } else {
@@ -135,6 +144,61 @@ pub(crate) fn parse_smil_transform_values(
         accumulate,
         calc_mode,
     })
+}
+
+fn lower_smil_transform(
+    kind: SmilTransformType,
+    keyframes: Vec<Keyframe<Vec<f32>>>,
+) -> Track<Vec<TransformFunction>> {
+    let all_rotate_centers_default = keyframes.iter().all(|keyframe| {
+        parameter(keyframe.value(), 1, 0.0) == 0.0 && parameter(keyframe.value(), 2, 0.0) == 0.0
+    });
+    Track::new(
+        keyframes
+            .into_iter()
+            .map(|keyframe| {
+                let values = keyframe.value();
+                let functions = match kind {
+                    SmilTransformType::Translate => vec![TransformFunction::Translate(
+                        parameter(values, 0, 0.0),
+                        parameter(values, 1, 0.0),
+                    )],
+                    SmilTransformType::Scale => {
+                        let sx = parameter(values, 0, 1.0);
+                        vec![TransformFunction::Scale(sx, parameter(values, 1, sx))]
+                    }
+                    SmilTransformType::SkewX => {
+                        vec![TransformFunction::SkewX(parameter(values, 0, 0.0))]
+                    }
+                    SmilTransformType::SkewY => {
+                        vec![TransformFunction::SkewY(parameter(values, 0, 0.0))]
+                    }
+                    SmilTransformType::Rotate if all_rotate_centers_default => {
+                        vec![TransformFunction::Rotate(parameter(values, 0, 0.0))]
+                    }
+                    SmilTransformType::Rotate => {
+                        let angle = parameter(values, 0, 0.0);
+                        let cx = parameter(values, 1, 0.0);
+                        let cy = parameter(values, 2, 0.0);
+                        vec![
+                            TransformFunction::Translate(cx, cy),
+                            TransformFunction::Rotate(angle),
+                            TransformFunction::Translate(-cx, -cy),
+                        ]
+                    }
+                };
+                Keyframe::new(
+                    keyframe.offset(),
+                    functions,
+                    keyframe.timing_function().cloned(),
+                )
+            })
+            .collect(),
+    )
+}
+
+fn parameter(values: &[f32], index: usize, default: f32) -> f32 {
+    values.get(index).copied().unwrap_or(default)
 }
 
 /// Warns and returns `None` when a value failed to parse.

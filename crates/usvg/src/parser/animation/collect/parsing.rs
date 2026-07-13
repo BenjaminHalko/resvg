@@ -9,11 +9,10 @@ use super::super::values::{parse_smil_transform_values, parse_smil_values};
 use super::base_value::base_value;
 use super::geometry::{is_shape_geometry, parse_geometry_animation};
 use super::targets::map_target_kind;
+use crate::parser::animation::values::SmilTransformType;
 use crate::parser::converter;
 use crate::parser::svgtree::{AId, EId, NodeId, SvgNode};
-use crate::tree::animation::{
-    Accumulate, Additive, Animation, AnimationSource, CalcMode, Easing, TransformKind,
-};
+use crate::tree::animation::{Accumulate, Additive, Animation, AnimationSource, CalcMode, Easing};
 
 pub(super) fn parse_animation(
     target: SvgNode,
@@ -34,12 +33,15 @@ pub(super) fn parse_animation(
             (kind, easing, additive, accumulate)
         }
         EId::AnimateTransform => {
-            let kind = parse_transform_kind(node.attribute(AId::Type)?)?;
+            let kind = parse_transform_type(node.attribute(AId::Type)?)?;
             let count = value_count(node, false);
             let easing = parse_easing(node, count)?;
             let values = parse_smil_transform_values(
                 kind,
-                false,
+                matches!(
+                    target.tag_name(),
+                    Some(EId::LinearGradient | EId::RadialGradient)
+                ),
                 node.attribute(AId::Values),
                 node.attribute(AId::From),
                 node.attribute(AId::To),
@@ -148,13 +150,13 @@ fn with_calc_mode(easing: Easing, calc_mode: CalcMode) -> Easing {
     }
 }
 
-fn parse_transform_kind(value: &str) -> Option<TransformKind> {
+fn parse_transform_type(value: &str) -> Option<SmilTransformType> {
     match value {
-        "translate" => Some(TransformKind::Translate),
-        "scale" => Some(TransformKind::Scale),
-        "rotate" => Some(TransformKind::Rotate),
-        "skewX" => Some(TransformKind::SkewX),
-        "skewY" => Some(TransformKind::SkewY),
+        "translate" => Some(SmilTransformType::Translate),
+        "scale" => Some(SmilTransformType::Scale),
+        "rotate" => Some(SmilTransformType::Rotate),
+        "skewX" => Some(SmilTransformType::SkewX),
+        "skewY" => Some(SmilTransformType::SkewY),
         _ => None,
     }
 }

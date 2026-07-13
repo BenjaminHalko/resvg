@@ -17,7 +17,7 @@ use tiny_skia_path::PathBuilder;
 
 use super::svgtree::{self, AId, EId, FromValue, SvgNode};
 use super::units::{self, convert_length};
-use super::{Error, Options, marker};
+use super::{marker, Error, Options};
 #[cfg(feature = "text")]
 use crate::flatten::BitmapImage;
 use crate::parser::paint_server::process_paint;
@@ -477,6 +477,8 @@ pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<
     tree.root.collect_masks(&mut tree.masks);
     tree.root.collect_filters(&mut tree.filters);
     tree.root.calculate_bounding_boxes();
+    #[cfg(feature = "animation")]
+    super::animation::css::bake_transform_origins(&mut tree.root);
 
     // The fontdb might have been mutated and we want to apply these changes to
     // the tree's fontdb.
@@ -1093,10 +1095,13 @@ fn convert_path(
         path_transform,
     );
 
-    let mut path = match path {
+    let path = match path {
         Some(v) => v,
         None => return,
     };
+
+    #[cfg(feature = "animation")]
+    let mut path = path;
 
     #[cfg(feature = "animation")]
     {

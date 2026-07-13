@@ -1,9 +1,14 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::{FillRule, LineCap, LineJoin, NonZeroRect, NormalizedF32, Opacity, StrokeMiterlimit};
+use crate::{
+    FillRule, LineCap, LineJoin, NonZeroRect, NormalizedF32, Opacity, Rect, StrokeMiterlimit,
+};
 
-use super::{Easing, MotionTrack, PathTrack, Timing, Track, TransformTrack};
+use super::{
+    CssBox, CssOrigin, Easing, MotionTrack, OriginComponent, PathTrack, Timing, Track,
+    TransformFunction,
+};
 
 /// The source of an animation — SMIL or CSS.
 #[derive(Clone, Copy, Debug)]
@@ -46,10 +51,14 @@ pub enum AnimationVisibility {
 /// The kind of an animation, carrying its typed keyframe data.
 #[derive(Clone, Debug)]
 pub enum AnimationKind {
-    /// An animated `transform` (SMIL or CSS).
-    Transform(TransformTrack),
-    /// An animated `gradientTransform`.
-    GradientTransform(TransformTrack),
+    /// An animated `transform` (SMIL or CSS), lowered to a function-list track.
+    ///
+    /// CSS `transform-origin` is baked into constant translate wrappers after
+    /// bounding boxes are resolved. This relies on CSS transform animations
+    /// using replace composition without accumulation.
+    Transform(Track<Vec<TransformFunction>>),
+    /// An animated `gradientTransform` with no CSS origin wrappers.
+    GradientTransform(Track<Vec<TransformFunction>>),
     /// An `animateMotion` path animation.
     Motion(MotionTrack),
     /// An animated `opacity`.
@@ -108,6 +117,7 @@ pub struct Animation {
     pub(crate) accumulate: Accumulate,
     pub(crate) source: AnimationSource,
     pub(crate) suppressed_by_important: bool,
+    pub(crate) css_origin: Option<CssOrigin>,
 }
 
 impl Animation {
@@ -129,6 +139,36 @@ impl Animation {
             accumulate,
             source,
             suppressed_by_important,
+            css_origin: None,
+        }
+    }
+
+    /// Retains a CSS transform origin until the target's bounds are known.
+    pub(crate) fn with_css_origin(mut self, origin: CssOrigin) -> Self {
+        self.css_origin = Some(origin);
+        self
+    }
+
+    /// Bakes a CSS transform origin into each transform-function keyframe.
+    pub(crate) fn bake_css_origin(&mut self, fill_bounds: Rect, stroke_bounds: Rect) {
+        let Some(origin) = self.css_origin.take() else {
+            return;
+        };
+        let AnimationKind::Transform(track) = &mut self.kind else {
+            return;
+        };
+        let bounds = match origin.box_ {
+            CssBox::Stroke => stroke_bounds,
+            CssBox::Content | CssBox::Border | CssBox::Fill | CssBox::View => fill_bounds,
+        };
+        let x = resolve_origin_component(origin.x, bounds.x(), bounds.width());
+        let y = resolve_origin_component(origin.y, bounds.y(), bounds.height());
+        for keyframe in &mut track.keyframes {
+            let mut functions = Vec::with_capacity(keyframe.value.len() + 2);
+            functions.push(TransformFunction::Translate(x, y));
+            functions.append(&mut keyframe.value);
+            functions.push(TransformFunction::Translate(-x, -y));
+            keyframe.value = functions;
         }
     }
 
@@ -174,5 +214,12 @@ impl Animation {
     /// animation with an indefinite simple duration contributes `None`.
     pub(crate) fn one_loop_end(&self) -> Option<f32> {
         self.timing.one_loop_end()
+    }
+}
+
+fn resolve_origin_component(component: OriginComponent, offset: f32, extent: f32) -> f32 {
+    match component {
+        OriginComponent::Length(value) => offset + value,
+        OriginComponent::Percent(value) => offset + extent * value / 100.0,
     }
 }

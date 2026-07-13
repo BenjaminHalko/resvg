@@ -5,7 +5,7 @@ use svgtypes::Color;
 use tiny_skia::Transform;
 use usvg::{
     Accumulate, Additive, Animation, AnimationKind, AnimationVisibility, NodeAnimation,
-    TimingFunction, TransformTrack,
+    TimingFunction,
 };
 
 use super::super::interpolate::{interpolate_track_with_timing, SampledValue};
@@ -61,9 +61,6 @@ fn apply(
     match sampled {
         SampledValue::Transform(matrix) => {
             fold_transform(&mut overrides.transform, matrix, additive);
-            if let AnimationKind::Transform(TransformTrack::Css { origin, box_, .. }) = kind {
-                overrides.css_transform = Some((*origin, *box_));
-            }
         }
         SampledValue::Motion(matrix) => {
             // Motion supplements the transform sandwich by post-multiplication.

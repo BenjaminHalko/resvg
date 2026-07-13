@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use svgtypes::Color;
 use tiny_skia::{Path, Transform};
-use usvg::{FillRule, LineCap, LineJoin, NonZeroRect, TransformBox, TransformOrigin};
+use usvg::{FillRule, LineCap, LineJoin, NonZeroRect};
 
 use super::interpolate::SampledValue;
 
@@ -65,7 +65,6 @@ pub(crate) struct SampledOverrides {
     pub(crate) gradient_overrides: Vec<(usize, SampledValue)>,
     pub(crate) view_box: Option<NonZeroRect>,
     pub(crate) image_geometry: Option<ImageGeometry>,
-    pub(crate) css_transform: Option<(TransformOrigin, TransformBox)>,
 }
 
 #[cfg(test)]
@@ -77,7 +76,7 @@ mod tests {
         Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, Direction,
         Easing, FillRule, Interval, Keyframe, MotionRotate, MotionTrack, NodeAnimation,
         NormalizedF32, PathKeyframe, PathTrack, TimedInterval, Timing, TimingFunction, Track,
-        TransformKind, TransformTrack,
+        TransformFunction,
     };
 
     use super::*;
@@ -215,20 +214,22 @@ mod tests {
         // A Replace translate establishes the base; an additive rotate composes
         // onto it by post-multiplication.
         let base = animation(
-            AnimationKind::Transform(TransformTrack::Smil {
-                kind: TransformKind::Translate,
-                keyframes: vec![Keyframe::new(n(0.0), vec![30.0, 0.0], None)],
-            }),
+            AnimationKind::Transform(Track::new(vec![Keyframe::new(
+                n(0.0),
+                vec![TransformFunction::Translate(30.0, 0.0)],
+                None,
+            )])),
             smil(1.0, vec![interval(0.0, Some(1.0))], true),
             linear(),
             Additive::Replace,
             Accumulate::None,
         );
         let rotate = animation(
-            AnimationKind::Transform(TransformTrack::Smil {
-                kind: TransformKind::Rotate,
-                keyframes: vec![Keyframe::new(n(0.0), vec![90.0, 0.0, 0.0], None)],
-            }),
+            AnimationKind::Transform(Track::new(vec![Keyframe::new(
+                n(0.0),
+                vec![TransformFunction::Rotate(90.0)],
+                None,
+            )])),
             smil(1.0, vec![interval(0.0, Some(1.0))], true),
             linear(),
             Additive::Sum,
@@ -239,6 +240,30 @@ mod tests {
         let expected =
             Transform::from_translate(30.0, 0.0).pre_concat(Transform::from_rotate(90.0));
         approx_transform(overrides.transform.unwrap(), expected);
+    }
+
+    #[test]
+    fn lowered_smil_transform_accumulates_its_terminal_matrix() {
+        // Given: a canonical translate list running in its second iteration.
+        let animation = animation(
+            AnimationKind::Transform(Track::new(vec![
+                Keyframe::new(n(0.0), vec![TransformFunction::Translate(0.0, 0.0)], None),
+                Keyframe::new(n(1.0), vec![TransformFunction::Translate(10.0, 20.0)], None),
+            ])),
+            smil(1.0, vec![interval(0.0, Some(2.0))], true),
+            linear(),
+            Additive::Replace,
+            Accumulate::Sum,
+        );
+
+        // When: the second iteration is sampled at its midpoint.
+        let overrides = sample_overrides(&node(vec![animation]), 1.5);
+
+        // Then: accumulation pre-concats one terminal function-list matrix.
+        approx_transform(
+            overrides.transform.unwrap(),
+            Transform::from_translate(15.0, 30.0),
+        );
     }
 
     #[test]

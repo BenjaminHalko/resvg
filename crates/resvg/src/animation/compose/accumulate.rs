@@ -7,7 +7,7 @@ use svgtypes::Color;
 use tiny_skia::{Path, PathBuilder, PathSegment, Transform};
 use usvg::{AnimationKind, Easing, TimingFunction};
 
-use super::super::interpolate::{SampledValue, interpolate_track_with_timing};
+use super::super::interpolate::{interpolate_track_with_timing, SampledValue};
 
 /// Applies `accumulate="sum"` to a sampled value for iteration `iteration`.
 pub(super) fn accumulate(

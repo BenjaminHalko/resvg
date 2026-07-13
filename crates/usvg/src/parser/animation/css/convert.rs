@@ -5,14 +5,14 @@ use std::sync::Arc;
 
 use crate::parser::svgtree::{AId, Document, EId, SvgNode};
 use crate::tree::animation::{
-    Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, Easing, Keyframe,
-    Timing, TimingFunction, Track, TransformBox, TransformOrigin, TransformTrack,
+    Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, CssOrigin, Easing,
+    Keyframe, Timing, TimingFunction, Track,
 };
 use crate::NormalizedF32;
 
 use self::metadata::{
     bake_timing, cycle, is_paused, longhand_list, parse_direction, parse_fill_mode,
-    parse_iterations, parse_time, read_transform_box, read_transform_origin, split_list,
+    parse_iterations, parse_time, read_transform_origin, split_list,
 };
 use self::timing::parse_timing_function;
 use self::transform::parse_transform_functions;
@@ -36,6 +36,7 @@ mod values;
 pub(crate) fn build_css_animations<'a, 'input>(
     node: SvgNode<'a, 'input>,
     doc: &'a Document<'input>,
+    state: &crate::parser::converter::State,
 ) -> Vec<Arc<Animation>> {
     let Some(names) = node.attribute::<&str>(AId::AnimationName) else {
         return Vec::new();
@@ -51,8 +52,7 @@ pub(crate) fn build_css_animations<'a, 'input>(
     let play_states = longhand_list(node, AId::AnimationPlayState);
 
     let is_stop = node.tag_name() == Some(EId::Stop);
-    let origin = read_transform_origin(node);
-    let box_ = read_transform_box(node);
+    let origin = read_transform_origin(node, state);
 
     let mut animations = Vec::new();
     for (index, name) in names.iter().enumerate() {
@@ -84,9 +84,9 @@ pub(crate) fn build_css_animations<'a, 'input>(
         );
 
         for property in animated_properties(rule) {
-            if let Some(animation) = build_property_animation(
-                node, rule, &property, is_stop, &timing, &easing, origin, box_,
-            ) {
+            if let Some(animation) =
+                build_property_animation(node, rule, &property, is_stop, &timing, &easing, origin)
+            {
                 animations.push(animation);
             }
         }
@@ -94,8 +94,8 @@ pub(crate) fn build_css_animations<'a, 'input>(
 
     animations
 }
-
 /// The CSS properties whose `@keyframes` values this crate converts.
+#[derive(Clone, Copy)]
 enum CssProperty {
     Transform,
     Opacity,
@@ -115,8 +115,7 @@ fn build_property_animation(
     is_stop: bool,
     timing: &Timing,
     easing: &Easing,
-    origin: TransformOrigin,
-    box_: TransformBox,
+    origin: CssOrigin,
 ) -> Option<Arc<Animation>> {
     let property = property.trim();
     if property.starts_with("--") {
@@ -141,11 +140,7 @@ fn build_property_animation(
             if keyframes.is_empty() {
                 return None;
             }
-            AnimationKind::Transform(TransformTrack::Css {
-                keyframes,
-                origin,
-                box_,
-            })
+            AnimationKind::Transform(Track::new(keyframes))
         }
         CssProperty::Opacity => AnimationKind::Opacity(build_track(&entries, parse_css_opacity)?),
         CssProperty::Fill => AnimationKind::Fill(build_track(&entries, parse_css_color)?),
@@ -162,7 +157,7 @@ fn build_property_animation(
         }
     };
 
-    Some(Arc::new(Animation::new(
+    let animation = Animation::new(
         kind,
         timing.clone(),
         easing.clone(),
@@ -170,7 +165,12 @@ fn build_property_animation(
         Accumulate::None,
         AnimationSource::Css,
         property_suppressed_by_important(node, property),
-    )))
+    );
+    let animation = match css_property {
+        CssProperty::Transform => animation.with_css_origin(origin),
+        _ => animation,
+    };
+    Some(Arc::new(animation))
 }
 
 /// Classifies a CSS property name against the supported set.

@@ -8,10 +8,12 @@
 //! are later matched against each element's `animation-*` properties and
 //! converted into typed animations.
 
+mod bake;
 mod convert;
 mod declarations;
 mod keyframes;
 mod scanner;
 
+pub(crate) use bake::bake_transform_origins;
 pub(crate) use convert::build_css_animations;
 pub(crate) use keyframes::*;

@@ -7,7 +7,7 @@ use std::sync::{Mutex, Once, OnceLock};
 
 use usvg::{
     Additive, AnimationKind, AnimationSource, CalcMode, Direction, Node, Options, StepPosition,
-    TimingFunction, TransformBox, TransformOriginValue, TransformTrack, Tree,
+    TimingFunction, TransformFunction, Tree,
 };
 
 const NS: &str = "http://www.w3.org/2000/svg";
@@ -73,6 +73,39 @@ fn animated_group_survives_pruning() {
     assert!(matches!(
         group.animations()[0].kind(),
         AnimationKind::Transform(_)
+    ));
+}
+
+#[test]
+fn smil_mixed_rotate_arity_lowers_to_uniform_function_lists() {
+    // Given: a bare rotation followed by one with an explicit center.
+    let tree = parse(
+        "<g><animateTransform attributeName='transform' type='rotate' values='0;90 10 0' dur='1s'/><rect width='4' height='4'/></g>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Transform(track) = animation.kind() else {
+        panic!("expected a transform track");
+    };
+
+    // When: the parser lowers the SMIL values into the public tree model.
+    let keyframes = track.keyframes();
+
+    // Then: every keyframe carries the centered three-function signature.
+    assert!(matches!(
+        keyframes[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Rotate(angle),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 0.0 && *y0 == 0.0 && *angle == 0.0 && *x1 == 0.0 && *y1 == 0.0
+    ));
+    assert!(matches!(
+        keyframes[1].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Rotate(angle),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 10.0 && *y0 == 0.0 && *angle == 90.0 && *x1 == -10.0 && *y1 == 0.0
     ));
 }
 
@@ -510,13 +543,16 @@ fn radial_gradient_geometry_track_stays_native() {
 }
 
 #[test]
-fn gradient_transform_animation_maps_to_transform_kind() {
+fn gradient_transform_animation_maps_to_gradient_transform_kind() {
     let tree = parse(
         "<defs><linearGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animateTransform attributeName='gradientTransform' type='translate' from='0 0' to='2 3' dur='1s'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/>",
     );
     let gradient = &tree.linear_gradients()[0];
     let animation = &gradient.animation().unwrap().animations()[0];
-    assert!(matches!(animation.kind(), AnimationKind::Transform(_)));
+    assert!(matches!(
+        animation.kind(),
+        AnimationKind::GradientTransform(_)
+    ));
 }
 
 #[test]
@@ -669,28 +705,41 @@ fn css_percent_keyframe_offset_is_placed() {
 }
 
 #[test]
-fn css_transform_origin_percent_values_are_captured() {
+fn css_transform_origin_percent_values_are_baked() {
     let tree = parse(
         "<style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(90deg); } } #box { transform-origin: 25% 75%; animation: spin 4s linear; }</style><rect id='box' width='4' height='4'/>",
     );
     let animation = &group(&tree.root().children()[0]).animations()[0];
-    let AnimationKind::Transform(TransformTrack::Css { origin, .. }) = animation.kind() else {
+    let AnimationKind::Transform(track) = animation.kind() else {
         panic!("expected a CSS transform track");
     };
-    assert!(matches!(origin.x(), TransformOriginValue::Percent(value) if *value == 25.0));
-    assert!(matches!(origin.y(), TransformOriginValue::Percent(value) if *value == 75.0));
+    assert!(matches!(
+        track.keyframes()[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Rotate(angle),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 1.0 && *y0 == 3.0 && *angle == 0.0 && *x1 == -1.0 && *y1 == -3.0
+    ));
 }
 
 #[test]
-fn css_transform_box_fill_box_is_captured() {
+fn css_transform_origin_uses_stroke_box_when_requested() {
     let tree = parse(
-        "<style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(90deg); } } #box { transform-box: fill-box; animation: spin 4s linear; }</style><rect id='box' width='4' height='4'/>",
+        "<style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(90deg); } } #box { transform-origin: 100% 50%; transform-box: stroke-box; animation: spin 4s linear; }</style><rect id='box' width='10' height='10' stroke='black' stroke-width='10'/>",
     );
     let animation = &group(&tree.root().children()[0]).animations()[0];
-    let AnimationKind::Transform(TransformTrack::Css { box_, .. }) = animation.kind() else {
+    let AnimationKind::Transform(track) = animation.kind() else {
         panic!("expected a CSS transform track");
     };
-    assert!(matches!(box_, TransformBox::FillBox));
+    assert!(matches!(
+        track.keyframes()[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Rotate(angle),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 15.0 && *y0 == 5.0 && *angle == 0.0 && *x1 == -15.0 && *y1 == -5.0
+    ));
 }
 
 #[test]

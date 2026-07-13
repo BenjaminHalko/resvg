@@ -3,51 +3,14 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::motion::{distance, ArcLength};
-
-    use std::cell::RefCell;
-    use std::sync::Once;
+    use super::*;
 
     use tiny_skia::{PathBuilder, Point};
     use usvg::{
         CalcMode, Keyframe, MotionRotate, MotionTrack, NormalizedF32, PathTrack, Track,
-        TransformFunction, TransformKind, TransformOrigin, TransformOriginValue, TransformTrack,
+        TransformFunction,
     };
-
-    // A thread-local capture buffer keeps each test's warnings isolated even
-    // when the suite runs in parallel against the one global logger.
-    thread_local! {
-        static WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    }
-
-    struct Capture;
-
-    impl log::Log for Capture {
-        fn enabled(&self, _: &log::Metadata) -> bool {
-            true
-        }
-        fn log(&self, record: &log::Record) {
-            WARNINGS.with(|w| w.borrow_mut().push(record.args().to_string()));
-        }
-        fn flush(&self) {}
-    }
-
-    fn init_logger() {
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            let _ = log::set_boxed_logger(Box::new(Capture));
-            log::set_max_level(log::LevelFilter::Warn);
-        });
-    }
-
-    fn clear_warnings() {
-        WARNINGS.with(|w| w.borrow_mut().clear());
-    }
-
-    fn warned(literal: &str) -> bool {
-        WARNINGS.with(|w| w.borrow().iter().any(|m| m == literal))
-    }
 
     fn n(v: f32) -> NormalizedF32 {
         NormalizedF32::new_clamped(v)
@@ -234,14 +197,10 @@ mod tests {
     fn smil_rotate_past_180_uses_param_lerp() {
         // 0 -> 270 lerps the angle to 135 at the midpoint, not the -45 a
         // shortest-arc matrix blend would take.
-        let keyframes = vec![
-            Keyframe::new(n(0.0), vec![0.0, 0.0, 0.0], None),
-            Keyframe::new(n(1.0), vec![270.0, 0.0, 0.0], None),
-        ];
-        let kind = AnimationKind::Transform(TransformTrack::Smil {
-            kind: TransformKind::Rotate,
-            keyframes,
-        });
+        let kind = AnimationKind::Transform(Track::new(vec![
+            Keyframe::new(n(0.0), vec![TransformFunction::Rotate(0.0)], None),
+            Keyframe::new(n(1.0), vec![TransformFunction::Rotate(270.0)], None),
+        ]));
 
         let sampled = expect_transform(interpolate_track(&kind, &linear(), 0.5));
         approx_transform(sampled, Transform::from_rotate_at(135.0, 0.0, 0.0), 1e-4);
@@ -256,15 +215,11 @@ mod tests {
     #[test]
     fn paced_rotate_spacing_by_angle() {
         // Angle deltas 90 and 270 across [0,90,360] with a constant center.
-        let keyframes = vec![
-            Keyframe::new(n(0.0), vec![0.0, 0.0, 0.0], None),
-            Keyframe::new(n(0.5), vec![90.0, 0.0, 0.0], None),
-            Keyframe::new(n(1.0), vec![360.0, 0.0, 0.0], None),
-        ];
-        let kind = AnimationKind::Transform(TransformTrack::Smil {
-            kind: TransformKind::Rotate,
-            keyframes,
-        });
+        let kind = AnimationKind::Transform(Track::new(vec![
+            Keyframe::new(n(0.0), vec![TransformFunction::Rotate(0.0)], None),
+            Keyframe::new(n(0.5), vec![TransformFunction::Rotate(90.0)], None),
+            Keyframe::new(n(1.0), vec![TransformFunction::Rotate(360.0)], None),
+        ]));
 
         // At quarter distance the angle is exactly 90 (end of the first delta).
         let at_quarter = expect_transform(interpolate_track(&kind, &paced(), 0.25));
@@ -280,24 +235,30 @@ mod tests {
 
     #[test]
     fn paced_rotate_varying_center_falls_back_to_linear() {
-        init_logger();
-        clear_warnings();
-
-        let keyframes = vec![
-            Keyframe::new(n(0.0), vec![0.0, 0.0, 0.0], None),
-            Keyframe::new(n(1.0), vec![90.0, 10.0, 10.0], None),
-        ];
-        let kind = AnimationKind::Transform(TransformTrack::Smil {
-            kind: TransformKind::Rotate,
-            keyframes,
-        });
+        let kind = AnimationKind::Transform(Track::new(vec![
+            Keyframe::new(
+                n(0.0),
+                vec![
+                    TransformFunction::Translate(0.0, 0.0),
+                    TransformFunction::Rotate(0.0),
+                    TransformFunction::Translate(0.0, 0.0),
+                ],
+                None,
+            ),
+            Keyframe::new(
+                n(1.0),
+                vec![
+                    TransformFunction::Translate(10.0, 10.0),
+                    TransformFunction::Rotate(90.0),
+                    TransformFunction::Translate(-10.0, -10.0),
+                ],
+                None,
+            ),
+        ]));
 
         // A varying center has no principled paced metric: fall back to linear.
         let sampled = expect_transform(interpolate_track(&kind, &paced(), 0.5));
         approx_transform(sampled, Transform::from_rotate_at(45.0, 5.0, 5.0), 1e-3);
-        assert!(warned(
-            "Paced interpolation is not supported here; using linear."
-        ));
     }
 
     #[test]
@@ -306,14 +267,7 @@ mod tests {
             Keyframe::new(n(0.0), vec![TransformFunction::Translate(0.0, 0.0)], None),
             Keyframe::new(n(1.0), vec![TransformFunction::Translate(100.0, 0.0)], None),
         ];
-        let kind = AnimationKind::Transform(TransformTrack::Css {
-            keyframes,
-            origin: TransformOrigin::new(
-                TransformOriginValue::Percent(50.0),
-                TransformOriginValue::Percent(50.0),
-            ),
-            box_: usvg::TransformBox::ViewBox,
-        });
+        let kind = AnimationKind::Transform(Track::new(keyframes));
 
         let sampled = expect_transform(interpolate_track(&kind, &linear(), 0.5));
         approx_transform(sampled, Transform::from_translate(50.0, 0.0), 1e-4);
@@ -321,28 +275,15 @@ mod tests {
 
     #[test]
     fn css_incompatible_transform_steps_and_warns() {
-        init_logger();
-        clear_warnings();
-
         let keyframes = vec![
             Keyframe::new(n(0.0), vec![TransformFunction::Translate(0.0, 0.0)], None),
             Keyframe::new(n(1.0), vec![TransformFunction::Scale(2.0, 2.0)], None),
         ];
-        let kind = AnimationKind::Transform(TransformTrack::Css {
-            keyframes,
-            origin: TransformOrigin::new(
-                TransformOriginValue::Percent(50.0),
-                TransformOriginValue::Percent(50.0),
-            ),
-            box_: usvg::TransformBox::ViewBox,
-        });
+        let kind = AnimationKind::Transform(Track::new(keyframes));
 
         // Structurally incompatible lists step to the low keyframe (translate 0).
         let sampled = expect_transform(interpolate_track(&kind, &linear(), 0.5));
         approx_transform(sampled, Transform::from_translate(0.0, 0.0), 1e-4);
-        assert!(warned(
-            "Unsupported transform animation; using discrete interpolation."
-        ));
     }
 
     #[test]

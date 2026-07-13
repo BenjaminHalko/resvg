@@ -2,138 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use tiny_skia::Transform;
-use usvg::{
-    CalcMode, Easing, Keyframe, TimingFunction, TransformFunction, TransformKind, TransformTrack,
-};
+use usvg::{CalcMode, Easing, Keyframe, TimingFunction, Track, TransformFunction};
 
 use super::locate::{discrete_index, lerp, locate_track, segment_metrics};
 
-/// Samples a SMIL or CSS transform track into a matrix.
+/// Samples a canonical transform-function track into a matrix.
 pub(super) fn sample_transform(
-    track: &TransformTrack,
+    track: &Track<Vec<TransformFunction>>,
     easing: &Easing,
     timing_function: Option<&TimingFunction>,
     progress: f32,
 ) -> Option<Transform> {
-    match track {
-        TransformTrack::Smil { kind, keyframes } => {
-            sample_smil_transform(*kind, keyframes, easing, timing_function, progress)
-        }
-        TransformTrack::Css { keyframes, .. } => {
-            sample_css_transform(keyframes, easing, timing_function, progress)
-        }
-    }
+    sample_function_lists(track.keyframes(), easing, timing_function, progress)
 }
 
-/// Samples a SMIL transform by lerping its typed parameters, then builds the
-/// matrix from the interpolated parameters.
-fn sample_smil_transform(
-    kind: TransformKind,
-    keyframes: &[Keyframe<Vec<f32>>],
-    easing: &Easing,
-    timing_function: Option<&TimingFunction>,
-    progress: f32,
-) -> Option<Transform> {
-    let paced = if matches!(easing.calc_mode(), CalcMode::Paced) {
-        smil_paced_distances(kind, keyframes)
-    } else {
-        None
-    };
-    let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
-    Some(build_smil_matrix(
-        kind,
-        keyframes[lo].value(),
-        keyframes[hi].value(),
-        t,
-    ))
-}
-
-/// Computes the per-kind paced metric for a SMIL transform.
-///
-/// `rotate` has a defined metric only when its center is constant across the
-/// track; a varying center returns `None`, and the caller falls back to linear.
-fn smil_paced_distances(kind: TransformKind, keyframes: &[Keyframe<Vec<f32>>]) -> Option<Vec<f32>> {
-    match kind {
-        TransformKind::Translate => Some(segment_metrics(keyframes, |a, b| {
-            let dx = param(a, 0, 0.0) - param(b, 0, 0.0);
-            let dy = param(a, 1, 0.0) - param(b, 1, 0.0);
-            (dx * dx + dy * dy).sqrt()
-        })),
-        TransformKind::Scale => Some(segment_metrics(keyframes, |a, b| {
-            let ax = param(a, 0, 1.0);
-            let bx = param(b, 0, 1.0);
-            let dx = ax - bx;
-            let dy = param(a, 1, ax) - param(b, 1, bx);
-            (dx * dx + dy * dy).sqrt()
-        })),
-        TransformKind::SkewX | TransformKind::SkewY => Some(segment_metrics(keyframes, |a, b| {
-            (param(a, 0, 0.0) - param(b, 0, 0.0)).abs()
-        })),
-        TransformKind::Rotate => rotate_center_constant(keyframes).then(|| {
-            segment_metrics(keyframes, |a, b| {
-                (param(a, 0, 0.0) - param(b, 0, 0.0)).abs()
-            })
-        }),
-    }
-}
-
-/// Reports whether every rotate keyframe shares one center.
-fn rotate_center_constant(keyframes: &[Keyframe<Vec<f32>>]) -> bool {
-    let mut iter = keyframes.iter();
-    let Some(first) = iter.next() else {
-        return true;
-    };
-    let cx = param(first.value(), 1, 0.0);
-    let cy = param(first.value(), 2, 0.0);
-    iter.all(|k| {
-        (param(k.value(), 1, 0.0) - cx).abs() < f32::EPSILON
-            && (param(k.value(), 2, 0.0) - cy).abs() < f32::EPSILON
-    })
-}
-
-/// Reads a transform parameter, falling back to `default` when absent.
-fn param(values: &[f32], index: usize, default: f32) -> f32 {
-    values.get(index).copied().unwrap_or(default)
-}
-
-/// Builds a transform matrix from two parameter lists lerped at `t`.
-fn build_smil_matrix(kind: TransformKind, a: &[f32], b: &[f32], t: f32) -> Transform {
-    match kind {
-        TransformKind::Translate => {
-            let tx = lerp(param(a, 0, 0.0), param(b, 0, 0.0), t);
-            let ty = lerp(param(a, 1, 0.0), param(b, 1, 0.0), t);
-            Transform::from_translate(tx, ty)
-        }
-        TransformKind::Scale => {
-            let ax = param(a, 0, 1.0);
-            let bx = param(b, 0, 1.0);
-            let sx = lerp(ax, bx, t);
-            let sy = lerp(param(a, 1, ax), param(b, 1, bx), t);
-            Transform::from_scale(sx, sy)
-        }
-        TransformKind::Rotate => {
-            let angle = lerp(param(a, 0, 0.0), param(b, 0, 0.0), t);
-            let cx = lerp(param(a, 1, 0.0), param(b, 1, 0.0), t);
-            let cy = lerp(param(a, 2, 0.0), param(b, 2, 0.0), t);
-            Transform::from_rotate_at(angle, cx, cy)
-        }
-        TransformKind::SkewX => {
-            let angle = lerp(param(a, 0, 0.0), param(b, 0, 0.0), t);
-            Transform::from_skew(angle.to_radians().tan(), 0.0)
-        }
-        TransformKind::SkewY => {
-            let angle = lerp(param(a, 0, 0.0), param(b, 0, 0.0), t);
-            Transform::from_skew(0.0, angle.to_radians().tan())
-        }
-    }
-}
-
-/// Samples a CSS transform track.
-///
-/// When every keyframe shares one function-type signature the lists lerp
-/// per function; otherwise the animation steps discretely and warns, since a
-/// matrix decomposition of mismatched lists is out of scope.
-fn sample_css_transform(
+/// Samples structurally compatible function lists or steps incompatible lists.
+fn sample_function_lists(
     keyframes: &[Keyframe<Vec<TransformFunction>>],
     easing: &Easing,
     timing_function: Option<&TimingFunction>,
@@ -144,7 +28,10 @@ fn sample_css_transform(
     }
 
     if css_functions_compatible(keyframes) {
-        let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, None)?;
+        let paced = matches!(easing.calc_mode(), CalcMode::Paced)
+            .then(|| list_paced_distances(keyframes))
+            .flatten();
+        let (lo, hi, t) = locate_track(keyframes, easing, timing_function, progress, paced)?;
         let functions: Vec<TransformFunction> = keyframes[lo]
             .value()
             .iter()
@@ -157,6 +44,113 @@ fn sample_css_transform(
         let index = discrete_index(keyframes, progress.clamp(0.0, 1.0));
         Some(build_css_matrix(keyframes[index].value()))
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PacedSignature {
+    Translate,
+    Scale,
+    SkewX,
+    SkewY,
+    Rotate,
+    RotateAt,
+    Other,
+}
+
+fn list_paced_distances(keyframes: &[Keyframe<Vec<TransformFunction>>]) -> Option<Vec<f32>> {
+    let first = keyframes.first()?;
+    let signature = paced_signature(first.value());
+    if !keyframes
+        .iter()
+        .all(|keyframe| paced_signature(keyframe.value()) == signature)
+    {
+        return None;
+    }
+    match signature {
+        PacedSignature::Translate => Some(segment_metrics(keyframes, |a, b| {
+            distance(translate(a, 0), translate(b, 0))
+        })),
+        PacedSignature::Scale => Some(segment_metrics(keyframes, |a, b| {
+            distance(scale(a), scale(b))
+        })),
+        PacedSignature::SkewX | PacedSignature::SkewY | PacedSignature::Rotate => {
+            Some(segment_metrics(keyframes, |a, b| {
+                (angle(a) - angle(b)).abs()
+            }))
+        }
+        PacedSignature::RotateAt if wrapper_translations_constant(keyframes) => {
+            Some(segment_metrics(keyframes, |a, b| {
+                (angle_at(a) - angle_at(b)).abs()
+            }))
+        }
+        PacedSignature::RotateAt | PacedSignature::Other => None,
+    }
+}
+
+fn paced_signature(functions: &[TransformFunction]) -> PacedSignature {
+    match functions {
+        [TransformFunction::Translate(_, _)] => PacedSignature::Translate,
+        [TransformFunction::Scale(_, _)] => PacedSignature::Scale,
+        [TransformFunction::SkewX(_)] => PacedSignature::SkewX,
+        [TransformFunction::SkewY(_)] => PacedSignature::SkewY,
+        [TransformFunction::Rotate(_)] => PacedSignature::Rotate,
+        [TransformFunction::Translate(_, _), TransformFunction::Rotate(_), TransformFunction::Translate(_, _)] => {
+            PacedSignature::RotateAt
+        }
+        _ => PacedSignature::Other,
+    }
+}
+
+fn wrapper_translations_constant(keyframes: &[Keyframe<Vec<TransformFunction>>]) -> bool {
+    let Some(first) = keyframes.first() else {
+        return true;
+    };
+    let before = translate(first.value(), 0);
+    let after = translate(first.value(), 2);
+    keyframes.iter().all(|keyframe| {
+        close(translate(keyframe.value(), 0), before)
+            && close(translate(keyframe.value(), 2), after)
+    })
+}
+
+fn translate(functions: &[TransformFunction], index: usize) -> (f32, f32) {
+    match functions[index] {
+        TransformFunction::Translate(x, y) => (x, y),
+        _ => unreachable!("paced signature guarantees a translate function"),
+    }
+}
+
+fn scale(functions: &[TransformFunction]) -> (f32, f32) {
+    match functions[0] {
+        TransformFunction::Scale(x, y) => (x, y),
+        _ => unreachable!("paced signature guarantees a scale function"),
+    }
+}
+
+fn angle(functions: &[TransformFunction]) -> f32 {
+    match functions[0] {
+        TransformFunction::SkewX(value)
+        | TransformFunction::SkewY(value)
+        | TransformFunction::Rotate(value) => value,
+        _ => unreachable!("paced signature guarantees an angular function"),
+    }
+}
+
+fn angle_at(functions: &[TransformFunction]) -> f32 {
+    match functions[1] {
+        TransformFunction::Rotate(value) => value,
+        _ => unreachable!("paced signature guarantees a middle rotate function"),
+    }
+}
+
+fn distance(a: (f32, f32), b: (f32, f32)) -> f32 {
+    let dx = a.0 - b.0;
+    let dy = a.1 - b.1;
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn close(a: (f32, f32), b: (f32, f32)) -> bool {
+    (a.0 - b.0).abs() < f32::EPSILON && (a.1 - b.1).abs() < f32::EPSILON
 }
 
 /// Reports whether all keyframes share one function-type signature.
@@ -222,6 +216,13 @@ fn function_matrix(function: &TransformFunction) -> Transform {
     }
 }
 
+pub(super) const INCOMPATIBLE_WARNING: &str =
+    "Unsupported transform animation; using discrete interpolation.";
+
 fn warn_incompatible_transform() {
-    log::warn!("Unsupported transform animation; using discrete interpolation.");
+    log::warn!("{INCOMPATIBLE_WARNING}");
 }
+
+#[cfg(test)]
+#[path = "transform/tests.rs"]
+mod tests;

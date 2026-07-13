@@ -216,6 +216,8 @@ pub(super) fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
+pub(super) const PACED_WARNING: &str = "Paced interpolation is not supported here; using linear.";
+
 fn warn_paced_unsupported() {
-    log::warn!("Paced interpolation is not supported here; using linear.");
+    log::warn!("{PACED_WARNING}");
 }

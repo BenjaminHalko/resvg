@@ -11,7 +11,7 @@ use super::warnings::has_remote_text_animation;
 use crate::parser::converter;
 use crate::parser::svgtree::{AId, EId, NodeId, SvgNode};
 use crate::tree::animation::{
-    Additive, Animation, AnimationKind, TransformKind, TransformTrack, ViewBoxAnimation,
+    Additive, Animation, AnimationKind, Track, TransformFunction, ViewBoxAnimation,
 };
 
 pub(crate) fn collect_node_animations(
@@ -23,7 +23,7 @@ pub(crate) fn collect_node_animations(
         log::warn!("Animation of text elements is not supported.");
     }
     let mut animations = super::collect_animations(node, state.all_animations, state, cache);
-    animations.extend(css::build_css_animations(node, node.document()));
+    animations.extend(css::build_css_animations(node, node.document(), state));
     animations
 }
 
@@ -161,22 +161,19 @@ pub(super) fn map_target_kind(
                 .keyframes()
                 .iter()
                 .map(|keyframe| {
-                    let values = match attribute_name {
-                        "x" => vec![*keyframe.value(), static_y],
-                        "y" => vec![static_x, *keyframe.value()],
-                        _ => vec![*keyframe.value(), 0.0],
+                    let (x, y) = match attribute_name {
+                        "x" => (*keyframe.value(), static_y),
+                        "y" => (static_x, *keyframe.value()),
+                        _ => (*keyframe.value(), 0.0),
                     };
                     crate::Keyframe::new(
                         keyframe.offset(),
-                        values,
+                        vec![TransformFunction::Translate(x, y)],
                         keyframe.timing_function().cloned(),
                     )
                 })
-                .collect();
-            return AnimationKind::Transform(TransformTrack::Smil {
-                kind: TransformKind::Translate,
-                keyframes,
-            });
+                .collect::<Vec<_>>();
+            return AnimationKind::Transform(Track::new(keyframes));
         }
     }
     kind

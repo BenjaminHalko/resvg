@@ -51,15 +51,7 @@ pub fn render(
 
     #[cfg(feature = "animation")]
     let transform = overrides
-        .and_then(|o| {
-            o.transform.map(|matrix| {
-                let bbox = match o.css_transform {
-                    Some((_, usvg::TransformBox::StrokeBox)) => path.stroke_bounding_box(),
-                    _ => path.bounding_box(),
-                };
-                crate::render::css_transform(matrix, o.css_transform, bbox)
-            })
-        })
+        .and_then(|o| o.transform)
         .map(|matrix| transform.pre_concat(matrix))
         .unwrap_or(transform);
 

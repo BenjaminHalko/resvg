@@ -59,42 +59,6 @@ impl<T: Clone> Track<T> {
     }
 }
 
-/// A SMIL transform track.
-#[derive(Clone, Debug)]
-pub enum TransformTrack {
-    /// A SMIL transform animation with typed parameters.
-    Smil {
-        /// The transform kind.
-        kind: TransformKind,
-        /// The keyframes (each value is a parameter list).
-        keyframes: Vec<Keyframe<Vec<f32>>>,
-    },
-    /// A CSS transform animation.
-    Css {
-        /// The keyframes (each value is a list of transform functions).
-        keyframes: Vec<Keyframe<Vec<TransformFunction>>>,
-        /// The transform origin.
-        origin: TransformOrigin,
-        /// The transform box.
-        box_: TransformBox,
-    },
-}
-
-/// The kind of a SMIL transform animation.
-#[derive(Clone, Copy, Debug)]
-pub enum TransformKind {
-    /// `translate(tx [ty])`.
-    Translate,
-    /// `scale(sx [sy])`.
-    Scale,
-    /// `rotate(angle [cx cy])`.
-    Rotate,
-    /// `skewX(angle)`.
-    SkewX,
-    /// `skewY(angle)`.
-    SkewY,
-}
-
 /// A CSS transform function.
 #[derive(Clone, Copy, Debug)]
 pub enum TransformFunction {
@@ -120,52 +84,35 @@ pub enum TransformFunction {
     SkewY(f32),
 }
 
-/// The transform origin for CSS animations.
+/// CSS transform-origin data retained until static bounds are available.
 #[derive(Clone, Copy, Debug)]
-pub struct TransformOrigin {
-    pub(crate) x: TransformOriginValue,
-    pub(crate) y: TransformOriginValue,
+pub(crate) struct CssOrigin {
+    pub(crate) x: OriginComponent,
+    pub(crate) y: OriginComponent,
+    pub(crate) box_: CssBox,
 }
 
-impl TransformOrigin {
-    /// Creates a new `TransformOrigin`.
-    pub fn new(x: TransformOriginValue, y: TransformOriginValue) -> Self {
-        Self { x, y }
-    }
-
-    /// The x component.
-    pub fn x(&self) -> &TransformOriginValue {
-        &self.x
-    }
-
-    /// The y component.
-    pub fn y(&self) -> &TransformOriginValue {
-        &self.y
+impl CssOrigin {
+    pub(crate) fn new(x: OriginComponent, y: OriginComponent, box_: CssBox) -> Self {
+        Self { x, y, box_ }
     }
 }
 
-/// A single component of a transform origin.
+/// A transform-origin component after non-percent lengths are resolved.
 #[derive(Clone, Copy, Debug)]
-pub enum TransformOriginValue {
-    /// An absolute length in user units.
+pub(crate) enum OriginComponent {
     Length(f32),
-    /// A percentage of the reference box.
     Percent(f32),
 }
 
-/// The transform box for CSS animations.
+/// The static bounds selector needed while baking a CSS transform origin.
 #[derive(Clone, Copy, Debug)]
-pub enum TransformBox {
-    /// `content-box`.
-    ContentBox,
-    /// `border-box`.
-    BorderBox,
-    /// `fill-box`.
-    FillBox,
-    /// `stroke-box`.
-    StrokeBox,
-    /// `view-box`.
-    ViewBox,
+pub(crate) enum CssBox {
+    Content,
+    Border,
+    Fill,
+    Stroke,
+    View,
 }
 
 /// A motion animation track.

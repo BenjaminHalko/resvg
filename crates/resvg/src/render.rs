@@ -10,26 +10,6 @@ pub struct Context {
     pub time: Option<f32>,
 }
 
-#[cfg(feature = "animation")]
-pub(crate) fn css_transform(
-    matrix: tiny_skia::Transform,
-    transform: Option<(usvg::TransformOrigin, usvg::TransformBox)>,
-    bbox: usvg::Rect,
-) -> tiny_skia::Transform {
-    let Some((origin, _)) = transform else {
-        return matrix;
-    };
-    let resolve = |value: &usvg::TransformOriginValue, offset: f32, extent: f32| match value {
-        usvg::TransformOriginValue::Length(value) => offset + value,
-        usvg::TransformOriginValue::Percent(value) => offset + extent * value / 100.0,
-    };
-    let x = resolve(origin.x(), bbox.x(), bbox.width());
-    let y = resolve(origin.y(), bbox.y(), bbox.height());
-    tiny_skia::Transform::from_translate(x, y)
-        .pre_concat(matrix)
-        .pre_translate(-x, -y)
-}
-
 pub fn render_nodes(
     parent: &usvg::Group,
     ctx: &Context,
@@ -131,15 +111,7 @@ fn render_group(
     #[cfg(feature = "animation")]
     let group_transform = overrides
         .as_ref()
-        .and_then(|o| {
-            o.transform.map(|matrix| {
-                let bbox = match o.css_transform {
-                    Some((_, usvg::TransformBox::StrokeBox)) => group.stroke_bounding_box(),
-                    _ => group.bounding_box(),
-                };
-                css_transform(matrix, o.css_transform, bbox)
-            })
-        })
+        .and_then(|o| o.transform)
         .unwrap_or_else(|| group.transform());
     #[cfg(not(feature = "animation"))]
     let group_transform = group.transform();

@@ -5,11 +5,10 @@
 //!
 //! [`interpolate_track`] samples one [`usvg::AnimationKind`] at a normalized
 //! progress within its simple duration and returns the typed value. Scalars and
-//! opacities lerp linearly, colors lerp per sRGB channel, SMIL transform
-//! parameters lerp before the matrix is built, CSS transform function lists lerp
-//! only when structurally compatible (otherwise they step discretely), baked
-//! path tracks lerp point-wise, and `animateMotion` maps progress onto the path
-//! by arc length.
+//! opacities lerp linearly, colors lerp per sRGB channel, transform function
+//! lists lerp only when structurally compatible (otherwise they step
+//! discretely), baked path tracks lerp point-wise, and `animateMotion` maps
+//! progress onto the path by arc length.
 //!
 //! The `calcMode` in [`usvg::Easing`] selects the segment behavior: `linear` and
 //! `spline` interpolate between the two bracketing keyframes (splines and CSS
@@ -41,9 +40,8 @@ use transform::sample_transform;
 
 /// A single sampled animation value, typed by the track it came from.
 ///
-/// The `transform-origin` of a CSS transform is intentionally not applied here:
-/// resolving a percentage or box-relative origin needs the node bounding box,
-/// which the composition layer supplies. Stop offsets are reported as
+/// CSS transform origins are baked into function lists after static bounds are
+/// resolved. Stop offsets are reported as
 /// [`SampledValue::GradientGeometry`]; the caller knows the originating kind.
 #[derive(Clone, Debug)]
 pub(crate) enum SampledValue {

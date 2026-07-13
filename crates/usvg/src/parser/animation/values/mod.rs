@@ -16,7 +16,7 @@ mod paint;
 mod presentation;
 mod stroke;
 
-pub(crate) use attributes::{parse_smil_transform_values, parse_smil_values};
+pub(crate) use attributes::{parse_smil_transform_values, parse_smil_values, SmilTransformType};
 pub(crate) use base_value::{BaseValue, SmilValues};
 
 #[cfg(test)]
@@ -24,8 +24,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::tree::animation::{
-        Accumulate, Additive, AnimationKind, AnimationVisibility, CalcMode, TransformKind,
-        TransformTrack,
+        Accumulate, Additive, AnimationKind, AnimationVisibility, CalcMode, TransformFunction,
     };
     use crate::{FillRule, LineCap, LineJoin, Opacity, StrokeMiterlimit};
 
@@ -458,7 +457,7 @@ mod tests {
     #[test]
     fn transform_translate_from_to() {
         let result = parse_smil_transform_values(
-            TransformKind::Translate,
+            SmilTransformType::Translate,
             false,
             None,
             Some("0 0"),
@@ -472,10 +471,13 @@ mod tests {
         )
         .unwrap();
         match &result.kind {
-            AnimationKind::Transform(TransformTrack::Smil { kind, keyframes }) => {
-                assert!(matches!(kind, TransformKind::Translate));
+            AnimationKind::Transform(track) => {
+                let keyframes = track.keyframes();
                 assert_eq!(keyframes.len(), 2);
-                assert_eq!(keyframes[1].value(), &vec![10.0, 20.0]);
+                assert!(matches!(
+                    keyframes[1].value().as_slice(),
+                    [TransformFunction::Translate(x, y)] if *x == 10.0 && *y == 20.0
+                ));
             }
             other => panic!("expected transform, got {other:?}"),
         }
