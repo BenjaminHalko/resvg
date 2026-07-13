@@ -27,6 +27,7 @@ pub use carriers::{
 pub use gradient::{GradientAnimation, SourceStop};
 pub use kinds::{
     Accumulate, Additive, Animation, AnimationKind, AnimationSource, AnimationVisibility,
+    GradientGeometry, GradientGeometryComponent,
 };
 pub use timing::{
     CalcMode, Direction, Easing, Interval, KeyOffset, StepPosition, TimedInterval, Timing,
@@ -73,7 +74,11 @@ mod tests {
         let _ = AnimationKind::StopColor(Track::new(vec![]));
         let _ = AnimationKind::StopOpacity(Track::new(vec![]));
         let _ = AnimationKind::StopOffset(Track::new(vec![]));
-        let _ = AnimationKind::GradientGeometry(Track::new(vec![]));
+        let _ = AnimationKind::Geometry(Track::new(vec![]));
+        let _ = AnimationKind::GradientGeometry(GradientGeometry::new(
+            GradientGeometryComponent::LinearX1,
+            Track::new(vec![]),
+        ));
         let _ = AnimationKind::ViewBox(Track::new(vec![]));
         let _ = AnimationKind::ImageX(Track::new(vec![]));
         let _ = AnimationKind::ImageY(Track::new(vec![]));

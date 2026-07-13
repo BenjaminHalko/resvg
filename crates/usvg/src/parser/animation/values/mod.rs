@@ -9,7 +9,7 @@
 
 mod attributes;
 mod base_value;
-mod forms;
+pub(crate) mod forms;
 mod geometry;
 mod opacity;
 mod paint;
@@ -18,6 +18,7 @@ mod stroke;
 
 pub(crate) use attributes::{parse_smil_transform_values, parse_smil_values, SmilTransformType};
 pub(crate) use base_value::{BaseValue, SmilValues};
+pub(crate) use geometry::parse_resolved_geometry_values;
 
 #[cfg(test)]
 mod tests {
@@ -247,7 +248,7 @@ mod tests {
         )
         .unwrap();
         match &result.kind {
-            AnimationKind::GradientGeometry(track) => {
+            AnimationKind::Geometry(track) => {
                 assert_eq!(*track.keyframes()[0].value(), 100.0);
                 assert_eq!(*track.keyframes()[1].value(), 150.0);
             }

@@ -8,6 +8,10 @@ use super::super::timing::{parse_easing, parse_smil_timing};
 use super::super::values::{parse_smil_transform_values, parse_smil_values};
 use super::base_value::base_value;
 use super::geometry::{is_shape_geometry, parse_geometry_animation};
+use super::resolved::{
+    is_gradient_geometry, is_image_geometry, parse_gradient_geometry_animation,
+    parse_image_geometry_animation,
+};
 use super::targets::map_target_kind;
 use crate::parser::animation::values::SmilTransformType;
 use crate::parser::converter;
@@ -66,6 +70,28 @@ pub(super) fn parse_animation(
             };
             let values = if is_shape_geometry(target, attribute_name) {
                 parse_geometry_animation(
+                    target,
+                    node,
+                    attribute_name,
+                    is_set,
+                    additive,
+                    accumulate,
+                    &easing,
+                    state,
+                )?
+            } else if is_image_geometry(target, attribute_name) {
+                parse_image_geometry_animation(
+                    target,
+                    node,
+                    attribute_name,
+                    is_set,
+                    additive,
+                    accumulate,
+                    &easing,
+                    state,
+                )?
+            } else if is_gradient_geometry(target, attribute_name) {
+                parse_gradient_geometry_animation(
                     target,
                     node,
                     attribute_name,

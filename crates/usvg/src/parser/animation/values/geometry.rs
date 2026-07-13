@@ -6,10 +6,10 @@ use std::str::FromStr;
 use crate::tree::animation::{AnimationKind, Track};
 use crate::{NonZeroRect, NormalizedF32};
 
-use super::SmilValues;
-use super::attributes::{AttributeContext, warned, warned_geometry};
-use super::forms::build_forms;
+use super::attributes::{warned, warned_geometry, AttributeContext};
+use super::forms::{build_forms, Forms};
 use super::opacity::parse_opacity;
+use super::SmilValues;
 
 pub(super) fn parse_offset_attribute(context: AttributeContext<'_>) -> Option<SmilValues> {
     let AttributeContext {
@@ -60,7 +60,36 @@ pub(super) fn parse_geometry_attribute(context: AttributeContext<'_>) -> Option<
         |a, b| a + b,
     )?;
     Some(SmilValues {
-        kind: AnimationKind::GradientGeometry(Track::new(keyframes)),
+        kind: AnimationKind::Geometry(Track::new(keyframes)),
+        additive,
+        accumulate,
+        calc_mode,
+    })
+}
+
+/// Parses geometry forms after their lengths have been resolved into user units.
+pub(crate) fn parse_resolved_geometry_values(
+    forms: &Forms<'_>,
+    key_times: Option<&[NormalizedF32]>,
+    additive: crate::tree::animation::Additive,
+    accumulate: crate::tree::animation::Accumulate,
+    calc_mode: crate::tree::animation::CalcMode,
+    base_value: Option<f32>,
+    resolve: impl Fn(&str) -> Option<f32>,
+) -> Option<SmilValues> {
+    let (keyframes, additive) = build_forms(
+        forms,
+        key_times,
+        additive,
+        false,
+        true,
+        Some(0.0),
+        base_value,
+        |value| warned_geometry(resolve(value), value),
+        |a, b| a + b,
+    )?;
+    Some(SmilValues {
+        kind: AnimationKind::Geometry(Track::new(keyframes)),
         additive,
         accumulate,
         calc_mode,

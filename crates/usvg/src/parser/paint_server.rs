@@ -7,9 +7,9 @@ use std::sync::Arc;
 use strict_num::PositiveF32;
 use svgtypes::{Length, LengthUnit as Unit};
 
-use super::OptionLog;
 use super::converter::{self, Cache, SvgColorExt};
 use super::svgtree::{AId, EId, SvgNode};
+use super::OptionLog;
 use crate::*;
 
 pub(crate) enum ServerOrColor {
@@ -525,6 +525,13 @@ fn resolve_rg_attr<'a, 'input>(node: SvgNode<'a, 'input>, name: AId) -> SvgNode<
     }
 
     node
+}
+
+/// Reports whether a radial focal coordinate is absent after the static href lookup.
+#[cfg(feature = "animation")]
+pub(crate) fn radial_focal_is_omitted(node: SvgNode, name: AId) -> bool {
+    debug_assert!(matches!(name, AId::Fx | AId::Fy));
+    !resolve_rg_attr(node, name).has_attribute(name)
 }
 
 fn resolve_pattern_attr<'a, 'input: 'a>(

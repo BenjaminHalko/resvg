@@ -48,6 +48,75 @@ pub enum AnimationVisibility {
     Collapse,
 }
 
+/// The animated component of a gradient's geometry.
+///
+/// The component is retained alongside resolved user-unit keyframes so renderers
+/// never infer it from matching scalar values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GradientGeometryComponent {
+    /// A linear gradient's `x1` endpoint.
+    LinearX1,
+    /// A linear gradient's `y1` endpoint.
+    LinearY1,
+    /// A linear gradient's `x2` endpoint.
+    LinearX2,
+    /// A linear gradient's `y2` endpoint.
+    LinearY2,
+    /// A radial gradient's center x coordinate.
+    RadialCx,
+    /// A radial gradient's center y coordinate.
+    RadialCy,
+    /// A radial gradient's radius.
+    RadialR,
+    /// A radial gradient's focal x coordinate.
+    RadialFx,
+    /// A radial gradient's focal y coordinate.
+    RadialFy,
+    /// A radial gradient's focal radius.
+    RadialFr,
+}
+
+impl GradientGeometryComponent {
+    pub(crate) fn from_attribute_name(name: &str) -> Option<Self> {
+        match name {
+            "x1" => Some(Self::LinearX1),
+            "y1" => Some(Self::LinearY1),
+            "x2" => Some(Self::LinearX2),
+            "y2" => Some(Self::LinearY2),
+            "cx" => Some(Self::RadialCx),
+            "cy" => Some(Self::RadialCy),
+            "r" => Some(Self::RadialR),
+            "fx" => Some(Self::RadialFx),
+            "fy" => Some(Self::RadialFy),
+            "fr" => Some(Self::RadialFr),
+            _ => None,
+        }
+    }
+}
+
+/// Resolved scalar keyframes for one typed gradient geometry component.
+#[derive(Clone, Debug)]
+pub struct GradientGeometry {
+    pub(crate) component: GradientGeometryComponent,
+    pub(crate) track: Track<f32>,
+}
+
+impl GradientGeometry {
+    pub(crate) fn new(component: GradientGeometryComponent, track: Track<f32>) -> Self {
+        Self { component, track }
+    }
+
+    /// The gradient geometry component represented by this track.
+    pub fn component(&self) -> GradientGeometryComponent {
+        self.component
+    }
+
+    /// The resolved scalar keyframes for this component.
+    pub fn track(&self) -> &Track<f32> {
+        &self.track
+    }
+}
+
 /// The kind of an animation, carrying its typed keyframe data.
 #[derive(Clone, Debug)]
 pub enum AnimationKind {
@@ -87,14 +156,19 @@ pub enum AnimationKind {
     Visibility(Track<AnimationVisibility>),
     /// A baked geometry animation.
     Path(PathTrack),
+    /// A resolved geometry scalar awaiting target-specific lowering.
+    ///
+    /// This is a parser intermediate and is never attached to a rendered shape,
+    /// image, or gradient.
+    Geometry(Track<f32>),
     /// An animated `stop-color`.
     StopColor(Track<svgtypes::Color>),
     /// An animated `stop-opacity`.
     StopOpacity(Track<Opacity>),
     /// An animated `offset` on a gradient stop.
     StopOffset(Track<NormalizedF32>),
-    /// An animated gradient geometry scalar.
-    GradientGeometry(Track<f32>),
+    /// An animated, resolved gradient geometry component.
+    GradientGeometry(GradientGeometry),
     /// An animated `viewBox` rect.
     ViewBox(Track<NonZeroRect>),
     /// An animated `image x` position.

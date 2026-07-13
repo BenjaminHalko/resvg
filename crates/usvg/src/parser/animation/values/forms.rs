@@ -3,17 +3,17 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::NormalizedF32;
 use crate::tree::animation::{Accumulate, Additive, Keyframe};
+use crate::NormalizedF32;
 
 use super::attributes::{warn_invalid_value, warn_unsupported_accumulate};
 
 /// The raw string values of the four SMIL value forms.
-pub(super) struct Forms<'a> {
-    pub(super) values: Option<&'a str>,
-    pub(super) from: Option<&'a str>,
-    pub(super) to: Option<&'a str>,
-    pub(super) by: Option<&'a str>,
+pub(crate) struct Forms<'a> {
+    pub(crate) values: Option<&'a str>,
+    pub(crate) from: Option<&'a str>,
+    pub(crate) to: Option<&'a str>,
+    pub(crate) by: Option<&'a str>,
 }
 
 /// Builds a keyframe track from the SMIL value forms and returns the resolved

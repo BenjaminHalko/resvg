@@ -582,6 +582,20 @@ fn convert_linear_gradient(
     opacity: usvg::Opacity,
     #[cfg(feature = "animation")] time: Option<f32>,
 ) -> Option<tiny_skia::Shader<'_>> {
+    #[cfg(feature = "animation")]
+    let geometry = time
+        .zip(gradient.animation())
+        .map(|(t, animation)| {
+            let overrides = sample_animation_list(animation.animations(), t);
+            linear_geometry(gradient, animation, &overrides)
+        })
+        .unwrap_or_else(|| LinearGeometry {
+            x1: gradient.x1(),
+            y1: gradient.y1(),
+            x2: gradient.x2(),
+            y2: gradient.y2(),
+        });
+
     let (mode, points) = convert_base_gradient(
         gradient,
         opacity,
@@ -590,7 +604,13 @@ fn convert_linear_gradient(
     )?;
 
     let shader = tiny_skia::LinearGradient::new(
+        #[cfg(feature = "animation")]
+        (geometry.x1, geometry.y1).into(),
+        #[cfg(not(feature = "animation"))]
         (gradient.x1(), gradient.y1()).into(),
+        #[cfg(feature = "animation")]
+        (geometry.x2, geometry.y2).into(),
+        #[cfg(not(feature = "animation"))]
         (gradient.x2(), gradient.y2()).into(),
         points,
         mode,
@@ -601,6 +621,53 @@ fn convert_linear_gradient(
     )?;
 
     Some(shader)
+}
+
+#[cfg(feature = "animation")]
+struct LinearGeometry {
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+}
+
+#[cfg(feature = "animation")]
+fn linear_geometry(
+    gradient: &usvg::LinearGradient,
+    animation: &usvg::GradientAnimation,
+    overrides: &SampledOverrides,
+) -> LinearGeometry {
+    let mut geometry = LinearGeometry {
+        x1: gradient.x1(),
+        y1: gradient.y1(),
+        x2: gradient.x2(),
+        y2: gradient.y2(),
+    };
+    for (index, value) in &overrides.gradient_overrides {
+        let Some(usvg::AnimationKind::GradientGeometry(track)) = animation
+            .animations()
+            .get(*index)
+            .map(|animation| animation.kind())
+        else {
+            continue;
+        };
+        let SampledValue::GradientGeometry(value) = value else {
+            continue;
+        };
+        match track.component() {
+            usvg::GradientGeometryComponent::LinearX1 => geometry.x1 = *value,
+            usvg::GradientGeometryComponent::LinearY1 => geometry.y1 = *value,
+            usvg::GradientGeometryComponent::LinearX2 => geometry.x2 = *value,
+            usvg::GradientGeometryComponent::LinearY2 => geometry.y2 = *value,
+            usvg::GradientGeometryComponent::RadialCx
+            | usvg::GradientGeometryComponent::RadialCy
+            | usvg::GradientGeometryComponent::RadialR
+            | usvg::GradientGeometryComponent::RadialFx
+            | usvg::GradientGeometryComponent::RadialFy
+            | usvg::GradientGeometryComponent::RadialFr => {}
+        }
+    }
+    geometry
 }
 
 fn convert_radial_gradient(
@@ -748,17 +815,6 @@ struct RadialGeometry {
 }
 
 #[cfg(feature = "animation")]
-#[derive(Clone, Copy)]
-enum RadialGeometryComponent {
-    Cx,
-    Cy,
-    R,
-    Fx,
-    Fy,
-    Fr,
-}
-
-#[cfg(feature = "animation")]
 fn radial_geometry(
     gradient: &usvg::RadialGradient,
     animation: &usvg::GradientAnimation,
@@ -774,8 +830,8 @@ fn radial_geometry(
         fy: gradient.fy(),
         fr: gradient.fr().get(),
     };
-    let focal_x_follows_center = gradient.fx() == gradient.cx();
-    let focal_y_follows_center = gradient.fy() == gradient.cy();
+    let mut has_animated_fx = false;
+    let mut has_animated_fy = false;
     for (index, value) in &overrides.gradient_overrides {
         let Some(usvg::AnimationKind::GradientGeometry(track)) = animation
             .animations()
@@ -787,39 +843,30 @@ fn radial_geometry(
         let SampledValue::GradientGeometry(value) = value else {
             continue;
         };
-        let Some(initial) = track.keyframes().first().map(|keyframe| *keyframe.value()) else {
-            continue;
-        };
-        let component = [
-            (RadialGeometryComponent::Cx, geometry.cx),
-            (RadialGeometryComponent::Cy, geometry.cy),
-            (RadialGeometryComponent::R, geometry.r),
-            (RadialGeometryComponent::Fx, geometry.fx),
-            (RadialGeometryComponent::Fy, geometry.fy),
-            (RadialGeometryComponent::Fr, geometry.fr),
-        ]
-        .into_iter()
-        .min_by(|(_, left), (_, right)| (initial - left).abs().total_cmp(&(initial - right).abs()))
-        .map(|(component, _)| component);
-        match component {
-            Some(RadialGeometryComponent::Cx) => {
-                geometry.cx = *value;
-                if focal_x_follows_center {
-                    geometry.fx = *value;
-                }
+        match track.component() {
+            usvg::GradientGeometryComponent::RadialCx => geometry.cx = *value,
+            usvg::GradientGeometryComponent::RadialCy => geometry.cy = *value,
+            usvg::GradientGeometryComponent::RadialR => geometry.r = *value,
+            usvg::GradientGeometryComponent::RadialFx => {
+                geometry.fx = *value;
+                has_animated_fx = true;
             }
-            Some(RadialGeometryComponent::Cy) => {
-                geometry.cy = *value;
-                if focal_y_follows_center {
-                    geometry.fy = *value;
-                }
+            usvg::GradientGeometryComponent::RadialFy => {
+                geometry.fy = *value;
+                has_animated_fy = true;
             }
-            Some(RadialGeometryComponent::R) => geometry.r = *value,
-            Some(RadialGeometryComponent::Fx) => geometry.fx = *value,
-            Some(RadialGeometryComponent::Fy) => geometry.fy = *value,
-            Some(RadialGeometryComponent::Fr) => geometry.fr = *value,
-            None => {}
+            usvg::GradientGeometryComponent::RadialFr => geometry.fr = *value,
+            usvg::GradientGeometryComponent::LinearX1
+            | usvg::GradientGeometryComponent::LinearY1
+            | usvg::GradientGeometryComponent::LinearX2
+            | usvg::GradientGeometryComponent::LinearY2 => {}
         }
+    }
+    if animation.focal_x_is_omitted() && !has_animated_fx {
+        geometry.fx = geometry.cx;
+    }
+    if animation.focal_y_is_omitted() && !has_animated_fy {
+        geometry.fy = geometry.cy;
     }
     geometry
 }

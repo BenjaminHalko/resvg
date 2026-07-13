@@ -5,6 +5,9 @@
 
 use crate::{render_at_pixmap, render_pixmap};
 
+#[path = "animation/gradient_geometry.rs"]
+mod animation_gradient_geometry;
+
 /// The alpha of a single pixel, or `0` when out of bounds.
 fn alpha_at(pixmap: &tiny_skia::Pixmap, x: u32, y: u32) -> u8 {
     pixmap.pixel(x, y).map(|p| p.alpha()).unwrap_or(0)

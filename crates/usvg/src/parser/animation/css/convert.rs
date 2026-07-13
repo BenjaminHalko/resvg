@@ -16,7 +16,9 @@ use self::metadata::{
 };
 use self::timing::parse_timing_function;
 use self::transform::parse_transform_functions;
-use self::values::{parse_css_color, parse_css_number, parse_css_opacity};
+use self::values::{
+    parse_css_color, parse_css_opacity, parse_css_stroke_dashoffset, parse_css_stroke_width,
+};
 use super::keyframes::KeyframesRule;
 
 mod metadata;
@@ -84,9 +86,9 @@ pub(crate) fn build_css_animations<'a, 'input>(
         );
 
         for property in animated_properties(rule) {
-            if let Some(animation) =
-                build_property_animation(node, rule, &property, is_stop, &timing, &easing, origin)
-            {
+            if let Some(animation) = build_property_animation(
+                node, rule, &property, is_stop, &timing, &easing, origin, state,
+            ) {
                 animations.push(animation);
             }
         }
@@ -116,6 +118,7 @@ fn build_property_animation(
     timing: &Timing,
     easing: &Easing,
     origin: CssOrigin,
+    state: &crate::parser::converter::State,
 ) -> Option<Arc<Animation>> {
     let property = property.trim();
     if property.starts_with("--") {
@@ -145,11 +148,13 @@ fn build_property_animation(
         CssProperty::Opacity => AnimationKind::Opacity(build_track(&entries, parse_css_opacity)?),
         CssProperty::Fill => AnimationKind::Fill(build_track(&entries, parse_css_color)?),
         CssProperty::Stroke => AnimationKind::Stroke(build_track(&entries, parse_css_color)?),
-        CssProperty::StrokeWidth => {
-            AnimationKind::StrokeWidth(build_track(&entries, parse_css_number)?)
-        }
+        CssProperty::StrokeWidth => AnimationKind::StrokeWidth(build_track(&entries, |value| {
+            parse_css_stroke_width(value, node, state)
+        })?),
         CssProperty::StrokeDashoffset => {
-            AnimationKind::StrokeDashoffset(build_track(&entries, parse_css_number)?)
+            AnimationKind::StrokeDashoffset(build_track(&entries, |value| {
+                parse_css_stroke_dashoffset(value, node, state)
+            })?)
         }
         CssProperty::StopColor => AnimationKind::StopColor(build_track(&entries, parse_css_color)?),
         CssProperty::StopOpacity => {

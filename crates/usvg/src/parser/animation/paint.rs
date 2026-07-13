@@ -18,7 +18,8 @@ use svgtypes::{Length, LengthUnit as Unit};
 use super::collect::collect_node_animations;
 use crate::parser::converter::{self, SvgColorExt};
 use crate::parser::paint_server::{
-    ServerOrColor, convert_spread_method, convert_units, find_gradient_with_stops, resolve_number,
+    convert_spread_method, convert_units, find_gradient_with_stops, radial_focal_is_omitted,
+    resolve_number, ServerOrColor,
 };
 use crate::parser::svgtree::{AId, EId, SvgNode};
 use crate::tree::animation::{GradientAnimation, SourceStop};
@@ -75,6 +76,14 @@ pub(crate) fn preserve_animated_gradient(
     } else {
         None
     };
+    let (focal_x_is_omitted, focal_y_is_omitted) = if tag == EId::RadialGradient {
+        (
+            radial_focal_is_omitted(node, AId::Fx),
+            radial_focal_is_omitted(node, AId::Fy),
+        )
+    } else {
+        (false, false)
+    };
 
     let base = BaseGradient {
         id,
@@ -85,6 +94,8 @@ pub(crate) fn preserve_animated_gradient(
         animation: Some(Box::new(GradientAnimation::new(
             animations,
             underlying_r,
+            focal_x_is_omitted,
+            focal_y_is_omitted,
             source_stops,
             source_indices,
         ))),

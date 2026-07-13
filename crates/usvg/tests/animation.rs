@@ -10,6 +10,9 @@ use usvg::{
     TimingFunction, TransformFunction, Tree,
 };
 
+#[path = "animation/geometry_units.rs"]
+mod geometry_units;
+
 const NS: &str = "http://www.w3.org/2000/svg";
 const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JTxAAAAAASUVORK5CYII=";
 
@@ -338,7 +341,7 @@ fn objectboundingbox_geometry_keyframes_stay_native() {
     assert_eq!(transform.sy, 10.0);
     let animation = gradient.animation().unwrap();
     let track = match animation.animations()[0].kind() {
-        AnimationKind::GradientGeometry(track) => track,
+        AnimationKind::GradientGeometry(geometry) => geometry.track(),
         other => panic!("expected gradient geometry, got {other:?}"),
     };
     assert_eq!(*track.keyframes()[0].value(), 0.2);
@@ -535,11 +538,11 @@ fn radial_gradient_geometry_track_stays_native() {
     );
     let gradient = &tree.radial_gradients()[0];
     let animation = &gradient.animation().unwrap().animations()[0];
-    let AnimationKind::GradientGeometry(track) = animation.kind() else {
+    let AnimationKind::GradientGeometry(geometry) = animation.kind() else {
         panic!("expected a gradient geometry track");
     };
-    assert_eq!(*track.keyframes()[0].value(), 0.2);
-    assert_eq!(*track.keyframes()[1].value(), 0.8);
+    assert_eq!(*geometry.track().keyframes()[0].value(), 0.2);
+    assert_eq!(*geometry.track().keyframes()[1].value(), 0.8);
 }
 
 #[test]

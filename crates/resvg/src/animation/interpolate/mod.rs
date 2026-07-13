@@ -155,12 +155,13 @@ pub(crate) fn interpolate_track_with_timing(
         }
         AnimationKind::Path(track) => sample_path(track, easing, timing_function, progress)
             .map(|(path, renderable)| SampledValue::Path(path, renderable)),
+        AnimationKind::Geometry(_) => None,
         AnimationKind::StopOffset(track) => {
             sample_opacity(track.keyframes(), easing, timing_function, progress)
                 .map(SampledValue::GradientGeometry)
         }
         AnimationKind::GradientGeometry(track) => {
-            sample_scalar(track.keyframes(), easing, timing_function, progress)
+            sample_scalar(track.track().keyframes(), easing, timing_function, progress)
                 .map(SampledValue::GradientGeometry)
         }
         AnimationKind::ViewBox(track) => {

@@ -144,17 +144,8 @@ pub(super) fn map_target_kind(
     kind: AnimationKind,
     state: &converter::State,
 ) -> AnimationKind {
-    if target.tag_name() == Some(EId::Image) {
-        return match (attribute_name, kind) {
-            ("x", AnimationKind::GradientGeometry(track)) => AnimationKind::ImageX(track),
-            ("y", AnimationKind::GradientGeometry(track)) => AnimationKind::ImageY(track),
-            ("width", AnimationKind::GradientGeometry(track)) => AnimationKind::ImageWidth(track),
-            ("height", AnimationKind::GradientGeometry(track)) => AnimationKind::ImageHeight(track),
-            (_, kind) => kind,
-        };
-    }
     if target.tag_name() == Some(EId::Use) {
-        if let AnimationKind::GradientGeometry(track) = kind {
+        if let AnimationKind::Geometry(track) = kind {
             let static_x = target.convert_user_length(AId::X, state, Length::zero());
             let static_y = target.convert_user_length(AId::Y, state, Length::zero());
             let keyframes = track

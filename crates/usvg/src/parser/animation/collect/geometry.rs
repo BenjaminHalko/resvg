@@ -3,13 +3,15 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use std::str::FromStr;
+
 use svgtypes::Length;
 
 use super::super::geom::{
-    ShapeGeometry, bake_geometry_animation, bake_geometry_animation_with_sum_base,
+    bake_geometry_animation, bake_geometry_animation_with_sum_base, ShapeGeometry,
 };
-use super::super::values::{SmilValues, parse_smil_values};
-use super::base_value::base_value;
+use super::super::values::forms::Forms;
+use super::super::values::{parse_resolved_geometry_values, SmilValues};
 use crate::parser::converter;
 use crate::parser::svgtree::{AId, EId, SvgNode};
 use crate::tree::animation::{Accumulate, Additive, AnimationKind, Easing};
@@ -25,57 +27,39 @@ pub(super) fn parse_geometry_animation(
     state: &converter::State,
 ) -> Option<SmilValues> {
     let geometry = shape_geometry(target, state);
-    let (mut values, mut offsets, raw_values) = if matches!(attribute_name, "d" | "points") {
-        let values = raw_geometry_values(target, node, attribute_name, is_set)?;
-        let offsets = offsets(values.len(), easing.key_times());
-        (Vec::new(), offsets, Some(values))
-    } else {
-        let values = parse_smil_values(
-            attribute_name,
-            if is_set {
-                node.attribute(AId::To)
-                    .or_else(|| node.attribute(AId::Values))
-            } else {
-                node.attribute(AId::Values)
-            },
-            if is_set {
-                None
-            } else {
-                node.attribute(AId::From)
-            },
-            if is_set {
-                None
-            } else {
-                node.attribute(AId::To)
-            },
-            if is_set {
-                None
-            } else {
-                node.attribute(AId::By)
-            },
-            additive,
-            accumulate,
-            easing.calc_mode(),
-            easing.key_times(),
-            &base_value(target, attribute_name, state),
-        )?;
-        let AnimationKind::GradientGeometry(track) = values.kind else {
-            return None;
+    let (mut values, mut offsets, raw_values, value_additive) =
+        if matches!(attribute_name, "d" | "points") {
+            let values = raw_geometry_values(target, node, attribute_name, is_set)?;
+            let offsets = offsets(values.len(), easing.key_times());
+            (Vec::new(), offsets, Some(values), additive)
+        } else {
+            let aid = AId::from_str(attribute_name)?;
+            let resolved = parse_resolved_geometry_values(
+                &forms(node, is_set),
+                easing.key_times(),
+                additive,
+                accumulate,
+                easing.calc_mode(),
+                geometry.attribute(attribute_name),
+                |value| resolve_user_length(value, target, aid, state),
+            )?;
+            let AnimationKind::Geometry(track) = resolved.kind else {
+                return None;
+            };
+            let offsets = track
+                .keyframes()
+                .iter()
+                .map(|keyframe| keyframe.offset())
+                .collect();
+            let values = track
+                .keyframes()
+                .iter()
+                .map(|keyframe| *keyframe.value())
+                .collect();
+            (values, offsets, None, resolved.additive)
         };
-        let offsets = track
-            .keyframes()
-            .iter()
-            .map(|keyframe| keyframe.offset())
-            .collect();
-        let values = track
-            .keyframes()
-            .iter()
-            .map(|keyframe| *keyframe.value())
-            .collect();
-        (values, offsets, None)
-    };
     let sum_over_base =
-        !matches!(attribute_name, "d" | "points") && matches!(additive, Additive::Sum);
+        !matches!(attribute_name, "d" | "points") && matches!(value_additive, Additive::Sum);
     if sum_over_base {
         let base = geometry.attribute(attribute_name)?;
         for value in &mut values {
@@ -113,11 +97,37 @@ pub(super) fn parse_geometry_animation(
         additive: if sum_over_base {
             Additive::Replace
         } else {
-            additive
+            value_additive
         },
         accumulate,
         calc_mode: bake.calc_mode,
     })
+}
+
+fn forms<'a, 'input: 'a>(node: SvgNode<'a, 'input>, is_set: bool) -> Forms<'a> {
+    Forms {
+        values: if is_set {
+            node.attribute(AId::To)
+                .or_else(|| node.attribute(AId::Values))
+        } else {
+            node.attribute(AId::Values)
+        },
+        from: (!is_set).then(|| node.attribute(AId::From)).flatten(),
+        to: (!is_set).then(|| node.attribute(AId::To)).flatten(),
+        by: (!is_set).then(|| node.attribute(AId::By)).flatten(),
+    }
+}
+
+fn resolve_user_length(
+    value: &str,
+    target: SvgNode,
+    aid: AId,
+    state: &converter::State,
+) -> Option<f32> {
+    let length = Length::from_str(value).ok()?;
+    Some(crate::parser::units::convert_user_length(
+        length, target, aid, state,
+    ))
 }
 
 fn raw_geometry_values<'a, 'input: 'a>(
