@@ -6,8 +6,8 @@
 use std::sync::{Mutex, Once, OnceLock};
 
 use usvg::{
-    Additive, AnimationKind, AnimationSource, CalcMode, Direction, Dur, Node, Options, SmilFill,
-    StepPosition, Timing, TimingFunction, TransformBox, TransformOriginValue, TransformTrack, Tree,
+    Additive, AnimationKind, AnimationSource, CalcMode, Direction, Node, Options, StepPosition,
+    TimingFunction, TransformBox, TransformOriginValue, TransformTrack, Tree,
 };
 
 const NS: &str = "http://www.w3.org/2000/svg";
@@ -127,11 +127,13 @@ fn concurrent_image_geometry_tracks_retain_timing() {
         animation.animations()[1].kind(),
         AnimationKind::ImageHeight(_)
     ));
-    assert!(
-        matches!(animation.animations()[0].timing(), Timing::Smil(timing) if matches!(timing.dur(), Dur::Seconds(value) if *value == 2.0))
+    assert_eq!(
+        animation.animations()[0].timing().iteration_dur(),
+        Some(2.0)
     );
-    assert!(
-        matches!(animation.animations()[1].timing(), Timing::Smil(timing) if matches!(timing.dur(), Dur::Seconds(value) if *value == 4.0))
+    assert_eq!(
+        animation.animations()[1].timing().iteration_dur(),
+        Some(4.0)
     );
 }
 
@@ -206,15 +208,13 @@ fn text_animation_warns_without_attachment() {
         "<text x='0' y='10'>text<animate attributeName='opacity' from='0' to='1' dur='1s'/></text><rect width='4' height='4'/>",
     );
     assert!(matches!(tree.root().children()[0], Node::Path(_)));
-    assert!(
-        WARNINGS
-            .get()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|warning| warning == "Animation of text elements is not supported.")
-    );
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Animation of text elements is not supported."));
 }
 
 #[test]
@@ -225,15 +225,13 @@ fn remote_text_animation_warns_without_attachment() {
     let _tree = parse(
         "<animate xlink:href='#text' attributeName='x' to='10' dur='1s' xmlns:xlink='http://www.w3.org/1999/xlink'/><rect width='4' height='4'/>",
     );
-    assert!(
-        WARNINGS
-            .get()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|warning| warning == "Animation of text elements is not supported.")
-    );
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Animation of text elements is not supported."));
 }
 
 #[test]
@@ -242,11 +240,10 @@ fn gradient_shared_by_two_shapes_keeps_tracks() {
         "<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='1s'/></stop><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/><rect width='4' height='4' fill='url(#g)'/>",
     );
     assert_eq!(tree.linear_gradients().len(), 2);
-    assert!(
-        tree.linear_gradients()
-            .iter()
-            .all(|gradient| gradient.animation().is_some())
-    );
+    assert!(tree
+        .linear_gradients()
+        .iter()
+        .all(|gradient| gradient.animation().is_some()));
 }
 
 #[test]
@@ -321,11 +318,10 @@ fn clone_preservation_across_different_bboxes() {
         "<defs><linearGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animate attributeName='x1' from='0' to='1' dur='1s'/></linearGradient></defs><rect width='10' height='10' fill='url(#g)'/><rect width='4' height='8' fill='url(#g)'/>",
     );
     assert_eq!(tree.linear_gradients().len(), 2);
-    assert!(
-        tree.linear_gradients()
-            .iter()
-            .all(|gradient| gradient.animation().is_some())
-    );
+    assert!(tree
+        .linear_gradients()
+        .iter()
+        .all(|gradient| gradient.animation().is_some()));
 }
 
 #[test]
@@ -348,15 +344,13 @@ fn view_box_narrowing_keeps_first_warns_second() {
     );
     let animation = tree.view_box_animation().unwrap();
     assert_eq!(animation.track().keyframes()[1].value().width(), 10.0);
-    assert!(
-        WARNINGS
-            .get()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|warning| warning == "Only a single non-additive viewBox animation is supported.")
-    );
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Only a single non-additive viewBox animation is supported."));
 }
 
 #[test]
@@ -365,12 +359,10 @@ fn multi_interval_begins_yield_two_intervals() {
         "<rect width='4' height='4'><animate attributeName='opacity' begin='0s;3s' dur='1s' from='0' to='1'/></rect>",
     );
     let animation = &group(&tree.root().children()[0]).animations()[0];
-    let Timing::Smil(timing) = animation.timing() else {
-        panic!("expected SMIL timing");
-    };
+    let timing = animation.timing();
     assert_eq!(timing.intervals().len(), 2);
-    assert_eq!(timing.intervals()[0].begin(), 0.0);
-    assert_eq!(timing.intervals()[1].begin(), 3.0);
+    assert_eq!(timing.intervals()[0].interval().begin(), 0.0);
+    assert_eq!(timing.intervals()[1].interval().begin(), 3.0);
 }
 
 #[test]
@@ -600,19 +592,13 @@ fn freeze_and_remove_fill_modes_are_distinguished() {
         "<rect width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='1s' fill='freeze'/></rect>",
     );
     let freeze_animation = &group(&freeze.root().children()[0]).animations()[0];
-    let Timing::Smil(freeze_timing) = freeze_animation.timing() else {
-        panic!("expected SMIL timing");
-    };
-    assert!(matches!(freeze_timing.fill(), SmilFill::Freeze));
+    assert_eq!(freeze_animation.timing().intervals()[0].held(), Some(1.0));
 
     let remove = parse(
         "<rect width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='1s' fill='remove'/></rect>",
     );
     let remove_animation = &group(&remove.root().children()[0]).animations()[0];
-    let Timing::Smil(remove_timing) = remove_animation.timing() else {
-        panic!("expected SMIL timing");
-    };
-    assert!(matches!(remove_timing.fill(), SmilFill::Remove));
+    assert_eq!(remove_animation.timing().intervals()[0].held(), None);
 }
 
 #[test]
@@ -622,12 +608,9 @@ fn css_steps_timing_function_is_parsed() {
     );
     let animation = &group(&tree.root().children()[0]).animations()[0];
     assert!(matches!(animation.source(), AnimationSource::Css));
-    let Timing::Css(timing) = animation.timing() else {
-        panic!("expected CSS timing");
-    };
     assert!(matches!(
-        *timing.timing_function(),
-        TimingFunction::Steps(4, StepPosition::JumpEnd)
+        animation.easing().timing_function(),
+        Some(TimingFunction::Steps(4, StepPosition::JumpEnd))
     ));
 }
 
@@ -637,11 +620,9 @@ fn css_negative_delay_is_preserved() {
         "<style>@keyframes move { from { transform: translate(0px,0px); } to { transform: translate(4px,0px); } } #box { animation: move 4s linear -1s; }</style><rect id='box' width='4' height='4'/>",
     );
     let animation = &group(&tree.root().children()[0]).animations()[0];
-    let Timing::Css(timing) = animation.timing() else {
-        panic!("expected CSS timing");
-    };
-    assert_eq!(timing.delay(), -1.0);
-    assert_eq!(timing.duration(), 4.0);
+    let interval = animation.timing().intervals()[0].interval();
+    assert_eq!(interval.begin(), -1.0);
+    assert_eq!(animation.timing().iteration_dur(), Some(4.0));
 }
 
 #[test]
@@ -650,10 +631,10 @@ fn css_alternate_reverse_direction_is_parsed() {
         "<style>@keyframes fade { from { opacity: 1; } to { opacity: 0; } } #box { animation: fade 4s linear alternate-reverse; }</style><rect id='box' width='4' height='4'/>",
     );
     let animation = &group(&tree.root().children()[0]).animations()[0];
-    let Timing::Css(timing) = animation.timing() else {
-        panic!("expected CSS timing");
-    };
-    assert!(matches!(timing.direction(), Direction::AlternateReverse));
+    assert!(matches!(
+        animation.timing().direction(),
+        Direction::AlternateReverse
+    ));
 }
 
 #[test]
@@ -768,15 +749,13 @@ fn css_unknown_keyframes_name_warns() {
     let _tree = parse(
         "<style>#box { animation: missing 4s linear; }</style><rect id='box' width='4' height='4'/>",
     );
-    assert!(
-        WARNINGS
-            .get()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|warning| warning == "Unknown keyframes name: 'missing'.")
-    );
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Unknown keyframes name: 'missing'."));
 }
 
 #[test]
@@ -787,15 +766,13 @@ fn css_unsupported_property_warns() {
     let _tree = parse(
         "<style>@keyframes shift { from { color: red; } to { color: blue; } } #box { animation: shift 4s linear; }</style><rect id='box' width='4' height='4'/>",
     );
-    assert!(
-        WARNINGS
-            .get()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|warning| warning == "Unsupported CSS property in keyframes: 'color'.")
-    );
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "Unsupported CSS property in keyframes: 'color'."));
 }
 
 #[test]
@@ -806,15 +783,13 @@ fn css_variables_are_not_supported_warns() {
     let _tree = parse(
         "<style>@keyframes shift { from { fill: var(--a); } to { fill: var(--b); } } #box { animation: shift 4s linear; }</style><rect id='box' width='4' height='4'/>",
     );
-    assert!(
-        WARNINGS
-            .get()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|warning| warning == "CSS variables are not supported.")
-    );
+    assert!(WARNINGS
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "CSS variables are not supported."));
 }
 
 #[test]

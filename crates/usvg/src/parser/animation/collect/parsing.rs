@@ -12,7 +12,7 @@ use super::targets::map_target_kind;
 use crate::parser::converter;
 use crate::parser::svgtree::{AId, EId, NodeId, SvgNode};
 use crate::tree::animation::{
-    Accumulate, Additive, Animation, AnimationSource, CalcMode, Easing, Timing, TransformKind,
+    Accumulate, Additive, Animation, AnimationSource, CalcMode, Easing, TransformKind,
 };
 
 pub(super) fn parse_animation(
@@ -23,7 +23,7 @@ pub(super) fn parse_animation(
     _cache: &mut converter::Cache,
 ) -> Option<Arc<Animation>> {
     let tag = node.tag_name()?;
-    let timing = Timing::Smil(parse_smil_timing(node, all_animations));
+    let timing = parse_smil_timing(node, all_animations);
     let additive = additive(node);
     let accumulate = accumulate(node);
     let attribute_name = node.attribute::<&str>(AId::AttributeName);
@@ -137,11 +137,15 @@ fn with_calc_mode(easing: Easing, calc_mode: CalcMode) -> Easing {
     if std::mem::discriminant(&easing.calc_mode()) == std::mem::discriminant(&calc_mode) {
         return easing;
     }
-    Easing::new(
+    let eased = Easing::new(
         calc_mode,
         easing.key_times().map(<[_]>::to_vec),
         easing.key_splines().map(<[_]>::to_vec),
-    )
+    );
+    match easing.timing_function().copied() {
+        Some(timing_function) => eased.with_timing_function(timing_function),
+        None => eased,
+    }
 }
 
 fn parse_transform_kind(value: &str) -> Option<TransformKind> {

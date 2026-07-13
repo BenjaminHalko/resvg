@@ -1,10 +1,9 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use super::intervals::{active_duration, parse_dur, parse_repeat_count, parse_repeat_dur};
+use super::intervals::{active_duration, parse_dur, parse_repeat_count, parse_repeat_dur, Begin};
 use super::syntax::parse_begin_entry;
 use crate::parser::svgtree::{AId, NodeId, SvgNode};
-use crate::tree::animation::Begin;
 
 /// A partially-parsed `begin`/`end` value, before syncbase resolution.
 #[derive(Clone, Debug)]

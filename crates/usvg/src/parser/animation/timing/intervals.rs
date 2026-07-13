@@ -4,17 +4,44 @@
 use super::clock::parse_clock_value;
 use super::syncbase::resolve_timing_list;
 use crate::parser::svgtree::{AId, NodeId, SvgNode};
-use crate::tree::animation::{Begin, Dur, Interval, RepeatCount, Restart, SmilFill, SmilTiming};
+use crate::tree::animation::{Direction, Interval, TimedInterval, Timing};
 
-/// Parses the SMIL timing attributes of an animation `node` into a [`SmilTiming`].
-///
-/// `all_animations` lists every animation element in the document so syncbase
-/// references (`x.begin`, `x.end`) can be resolved. Event-based, cyclic and
-/// otherwise unresolvable values are dropped with a warning.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Begin {
+    Offset(f32),
+    Indefinite,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SimpleDuration {
+    Seconds(f32),
+    Indefinite,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum IterationLimit {
+    Count(f32),
+    Indefinite,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum FillBehavior {
+    Freeze,
+    Remove,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Admission {
+    Always,
+    Never,
+    WhenInactive,
+}
+
+/// Parses SMIL timing and bakes its resolved behavior into a canonical timeline.
 pub(crate) fn parse_smil_timing<'a, 'input: 'a>(
     node: SvgNode<'a, 'input>,
     all_animations: &[(NodeId, SvgNode<'a, 'input>)],
-) -> SmilTiming {
+) -> Timing {
     if node.has_attribute(AId::Min) {
         log::warn!("Unsupported SMIL timing attribute: '{}'.", "min");
     }
@@ -25,77 +52,85 @@ pub(crate) fn parse_smil_timing<'a, 'input: 'a>(
     let mut visiting = vec![node];
     let begins = resolve_timing_list(node, AId::Begin, true, all_animations, &mut visiting);
     let ends = resolve_timing_list(node, AId::End, false, all_animations, &mut visiting);
-
-    let dur = parse_dur(node);
-    let repeat_count = parse_repeat_count(node);
-    let repeat_dur = parse_repeat_dur(node);
+    let parsed_duration = parse_dur(node);
+    let limit = parse_repeat_count(node);
+    let repeat_duration = parse_repeat_dur(node);
     let fill = parse_fill(node);
-    let restart = parse_restart(node);
+    let admission = parse_restart(node);
+    let active = active_duration(parsed_duration, limit, repeat_duration);
+    let intervals = build_intervals(&begins, &ends, active, admission);
+    let iteration_dur = simple_duration(parsed_duration);
+    let one_loop_end = iteration_dur.and_then(|duration| {
+        intervals
+            .iter()
+            .map(Interval::begin)
+            .reduce(f32::min)
+            .map(|begin| begin + duration)
+    });
+    let intervals = intervals
+        .into_iter()
+        .map(|interval| {
+            let held = match fill {
+                FillBehavior::Freeze => Some(frozen_progress(&interval, iteration_dur)),
+                FillBehavior::Remove => None,
+            };
+            TimedInterval::new(interval, held)
+        })
+        .collect();
 
-    let active = active_duration(dur, repeat_count, repeat_dur);
-    let intervals = build_intervals(&begins, &ends, active, restart);
-
-    SmilTiming::new(
-        begins,
-        dur,
-        ends,
-        repeat_count,
-        repeat_dur,
-        fill,
-        restart,
+    Timing::new(
         intervals,
+        iteration_dur,
+        Direction::Normal,
+        None,
+        one_loop_end,
     )
 }
 
-/// Parses the `dur` attribute. Absent or invalid durations are `indefinite`.
-pub(super) fn parse_dur<'a, 'input>(node: SvgNode<'a, 'input>) -> Dur {
+pub(super) fn parse_dur<'a, 'input>(node: SvgNode<'a, 'input>) -> SimpleDuration {
     let Some(value) = node.attribute::<&str>(AId::Dur) else {
-        return Dur::Indefinite;
+        return SimpleDuration::Indefinite;
     };
 
     let value = value.trim();
     if value == "indefinite" || value == "media" {
-        return Dur::Indefinite;
+        return SimpleDuration::Indefinite;
     }
 
     match parse_clock_value(value) {
-        Some(seconds) if seconds >= 0.0 => Dur::Seconds(seconds),
-        _ => Dur::Indefinite,
+        Some(seconds) if seconds >= 0.0 => SimpleDuration::Seconds(seconds),
+        _ => SimpleDuration::Indefinite,
     }
 }
 
-/// Parses the `restart` attribute, defaulting to `always`.
-fn parse_restart<'a, 'input>(node: SvgNode<'a, 'input>) -> Restart {
+fn parse_restart<'a, 'input>(node: SvgNode<'a, 'input>) -> Admission {
     match node.attribute::<&str>(AId::Restart) {
-        Some("never") => Restart::Never,
-        Some("whenNotActive") => Restart::WhenNotActive,
-        _ => Restart::Always,
+        Some("never") => Admission::Never,
+        Some("whenNotActive") => Admission::WhenInactive,
+        _ => Admission::Always,
     }
 }
 
-/// Parses the SMIL `fill` attribute, defaulting to `remove`.
-fn parse_fill<'a, 'input>(node: SvgNode<'a, 'input>) -> SmilFill {
+fn parse_fill<'a, 'input>(node: SvgNode<'a, 'input>) -> FillBehavior {
     match node.attribute::<&str>(AId::Fill) {
-        Some("freeze") => SmilFill::Freeze,
-        _ => SmilFill::Remove,
+        Some("freeze") => FillBehavior::Freeze,
+        _ => FillBehavior::Remove,
     }
 }
 
-/// Parses the `repeatCount` attribute.
-pub(super) fn parse_repeat_count<'a, 'input>(node: SvgNode<'a, 'input>) -> Option<RepeatCount> {
+pub(super) fn parse_repeat_count<'a, 'input>(node: SvgNode<'a, 'input>) -> Option<IterationLimit> {
     let value = node.attribute::<&str>(AId::RepeatCount)?;
     let value = value.trim();
     if value == "indefinite" {
-        return Some(RepeatCount::Indefinite);
+        return Some(IterationLimit::Indefinite);
     }
 
     match value.parse::<f32>() {
-        Ok(count) if count.is_finite() && count > 0.0 => Some(RepeatCount::Count(count)),
+        Ok(count) if count.is_finite() && count > 0.0 => Some(IterationLimit::Count(count)),
         _ => None,
     }
 }
 
-/// Parses the `repeatDur` attribute. `indefinite` yields `None` (unbounded).
 pub(super) fn parse_repeat_dur<'a, 'input>(node: SvgNode<'a, 'input>) -> Option<f32> {
     let value = node.attribute::<&str>(AId::RepeatDur)?;
     let value = value.trim();
@@ -106,31 +141,26 @@ pub(super) fn parse_repeat_dur<'a, 'input>(node: SvgNode<'a, 'input>) -> Option<
     parse_clock_value(value).filter(|seconds| *seconds > 0.0)
 }
 
-/// Computes the active duration in seconds, or `None` when it is indefinite.
-///
-/// Follows the SMIL rule `min(repeatCount * dur, repeatDur)`, treating an
-/// indefinite operand as unbounded.
 pub(super) fn active_duration(
-    dur: Dur,
-    repeat_count: Option<RepeatCount>,
-    repeat_dur: Option<f32>,
+    duration: SimpleDuration,
+    limit: Option<IterationLimit>,
+    repeat_duration: Option<f32>,
 ) -> Option<f32> {
-    let simple = match dur {
-        Dur::Seconds(seconds) => Some(seconds),
-        Dur::Indefinite => None,
+    let simple = match duration {
+        SimpleDuration::Seconds(seconds) => Some(seconds),
+        SimpleDuration::Indefinite => None,
     };
 
-    if repeat_count.is_none() && repeat_dur.is_none() {
+    if limit.is_none() && repeat_duration.is_none() {
         return simple;
     }
 
-    let by_count = match repeat_count {
-        Some(RepeatCount::Count(count)) => simple.map(|seconds| count * seconds),
-        Some(RepeatCount::Indefinite) => None,
-        None => None,
+    let by_count = match limit {
+        Some(IterationLimit::Count(count)) => simple.map(|seconds| count * seconds),
+        Some(IterationLimit::Indefinite) | None => None,
     };
 
-    match (by_count, repeat_dur) {
+    match (by_count, repeat_duration) {
         (Some(a), Some(b)) => Some(a.min(b)),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
@@ -138,17 +168,35 @@ pub(super) fn active_duration(
     }
 }
 
-/// Builds the resolved intervals from the resolved begin/end lists.
-///
-/// Each interval end is computed before the restart admission decision:
-/// `restart=never` keeps only the first interval, `restart=whenNotActive` skips
-/// a begin that falls inside the previous interval, and `restart=always` accepts
-/// every begin while capping each interval at the next begin.
+fn simple_duration(duration: SimpleDuration) -> Option<f32> {
+    match duration {
+        SimpleDuration::Seconds(seconds) if seconds > 0.0 => Some(seconds),
+        SimpleDuration::Seconds(_) | SimpleDuration::Indefinite => None,
+    }
+}
+
+fn frozen_progress(interval: &Interval, iteration_dur: Option<f32>) -> f32 {
+    let Some(end) = interval.end() else {
+        return 0.0;
+    };
+    let Some(duration) = iteration_dur else {
+        return 1.0;
+    };
+
+    let raw = (end - interval.begin()) / duration;
+    let fraction = raw - raw.floor();
+    if fraction <= f32::EPSILON && raw >= 1.0 {
+        1.0
+    } else {
+        fraction
+    }
+}
+
 fn build_intervals(
     begins: &[Begin],
     ends: &[Begin],
     active: Option<f32>,
-    restart: Restart,
+    admission: Admission,
 ) -> Vec<Interval> {
     let mut begin_instants: Vec<f32> = begins.iter().filter_map(begin_instant).collect();
     begin_instants.sort_by(cmp_f32);
@@ -161,14 +209,13 @@ fn build_intervals(
     let mut intervals = Vec::new();
     let mut last_end = f32::NEG_INFINITY;
 
-    for (i, &begin) in begin_instants.iter().enumerate() {
+    for (index, &begin) in begin_instants.iter().enumerate() {
         let active_end = active.map(|duration| begin + duration);
-
         let mut end = if has_end_list {
-            match end_instants.iter().copied().find(|&e| e >= begin) {
-                Some(e) => Some(active_end.map_or(e, |a| a.min(e))),
+            match end_instants.iter().copied().find(|&end| end >= begin) {
+                Some(end) => Some(active_end.map_or(end, |active_end| active_end.min(end))),
                 None => match active_end {
-                    Some(a) => Some(a),
+                    Some(active_end) => Some(active_end),
                     None => continue,
                 },
             }
@@ -176,25 +223,22 @@ fn build_intervals(
             active_end
         };
 
-        if matches!(restart, Restart::Always) {
-            if let Some(&next_begin) = begin_instants.get(i + 1) {
-                end = Some(end.map_or(next_begin, |cur| cur.min(next_begin)));
+        if matches!(admission, Admission::Always) {
+            if let Some(&next_begin) = begin_instants.get(index + 1) {
+                end = Some(end.map_or(next_begin, |current| current.min(next_begin)));
             }
         }
 
-        let admit = match restart {
-            Restart::Never => intervals.is_empty(),
-            Restart::WhenNotActive => begin >= last_end,
-            Restart::Always => true,
+        let admit = match admission {
+            Admission::Never => intervals.is_empty(),
+            Admission::WhenInactive => begin >= last_end,
+            Admission::Always => true,
         };
         if !admit {
             continue;
         }
-
-        if let Some(e) = end {
-            if e < begin {
-                continue;
-            }
+        if end.is_some_and(|end| end < begin) {
+            continue;
         }
 
         intervals.push(Interval::new(begin, end));
@@ -204,7 +248,6 @@ fn build_intervals(
     intervals
 }
 
-/// Returns the offset of a [`Begin`], or `None` for `indefinite`.
 pub(super) fn begin_instant(begin: &Begin) -> Option<f32> {
     match begin {
         Begin::Offset(seconds) => Some(*seconds),
@@ -212,7 +255,6 @@ pub(super) fn begin_instant(begin: &Begin) -> Option<f32> {
     }
 }
 
-/// Total ordering for the finite instants produced during resolution.
 fn cmp_f32(a: &f32, b: &f32) -> std::cmp::Ordering {
     a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
 }

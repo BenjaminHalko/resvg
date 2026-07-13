@@ -74,11 +74,10 @@ mod tests {
 
     use tiny_skia::{Path, PathBuilder, Transform};
     use usvg::{
-        Accumulate, Additive, Animation, AnimationKind, AnimationSource, Begin, CalcMode,
-        CssFillMode, CssTiming, Direction, Dur, Easing, FillRule, Interval, Iterations, Keyframe,
-        MotionRotate, MotionTrack, NodeAnimation, NormalizedF32, PathKeyframe, PathTrack,
-        PlayState, Restart, SmilFill, SmilTiming, Timing, TimingFunction, Track, TransformKind,
-        TransformTrack,
+        Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, Direction,
+        Easing, FillRule, Interval, Keyframe, MotionRotate, MotionTrack, NodeAnimation,
+        NormalizedF32, PathKeyframe, PathTrack, TimedInterval, Timing, TimingFunction, Track,
+        TransformKind, TransformTrack,
     };
 
     use super::*;
@@ -99,17 +98,29 @@ mod tests {
         Interval::new(begin, end)
     }
 
-    fn smil(dur: f32, intervals: Vec<Interval>, fill: SmilFill) -> Timing {
-        Timing::Smil(SmilTiming::new(
-            vec![Begin::Offset(0.0)],
-            Dur::Seconds(dur),
-            vec![],
-            None,
-            None,
-            fill,
-            Restart::Always,
-            intervals,
-        ))
+    fn smil(dur: f32, intervals: Vec<Interval>, freeze: bool) -> Timing {
+        let one_loop_end = intervals
+            .iter()
+            .map(Interval::begin)
+            .reduce(f32::min)
+            .map(|begin| begin + dur);
+        let intervals = intervals
+            .into_iter()
+            .map(|interval| {
+                let held = freeze.then(|| {
+                    let end = interval.end().unwrap_or(interval.begin());
+                    let raw = (end - interval.begin()) / dur;
+                    let fraction = raw - raw.floor();
+                    if fraction <= f32::EPSILON && raw >= 1.0 {
+                        1.0
+                    } else {
+                        fraction
+                    }
+                });
+                TimedInterval::new(interval, held)
+            })
+            .collect();
+        Timing::new(intervals, Some(dur), Direction::Normal, None, one_loop_end)
     }
 
     fn animation(
@@ -208,7 +219,7 @@ mod tests {
                 kind: TransformKind::Translate,
                 keyframes: vec![Keyframe::new(n(0.0), vec![30.0, 0.0], None)],
             }),
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             linear(),
             Additive::Replace,
             Accumulate::None,
@@ -218,7 +229,7 @@ mod tests {
                 kind: TransformKind::Rotate,
                 keyframes: vec![Keyframe::new(n(0.0), vec![90.0, 0.0, 0.0], None)],
             }),
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             linear(),
             Additive::Sum,
             Accumulate::None,
@@ -236,13 +247,13 @@ mod tests {
         // At t=3 the later-beginning animation wins despite coming first.
         let late = width_animation(
             &[20.0],
-            smil(10.0, vec![interval(2.0, Some(12.0))], SmilFill::Freeze),
+            smil(10.0, vec![interval(2.0, Some(12.0))], true),
             Additive::Replace,
             Accumulate::None,
         );
         let early = width_animation(
             &[10.0],
-            smil(10.0, vec![interval(0.0, Some(10.0))], SmilFill::Freeze),
+            smil(10.0, vec![interval(0.0, Some(10.0))], true),
             Additive::Replace,
             Accumulate::None,
         );
@@ -256,13 +267,13 @@ mod tests {
         // Equal begins: the later document-order animation wins the tie.
         let first = width_animation(
             &[10.0],
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             Additive::Replace,
             Accumulate::None,
         );
         let second = width_animation(
             &[20.0],
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             Additive::Replace,
             Accumulate::None,
         );
@@ -276,7 +287,7 @@ mod tests {
         // from=2 to=4 dur=1 repeatCount=2 accumulate=sum: iteration 1 spans 6->8.
         let anim = width_animation(
             &[2.0, 4.0],
-            smil(1.0, vec![interval(0.0, Some(2.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(2.0))], true),
             Additive::Replace,
             Accumulate::Sum,
         );
@@ -303,7 +314,7 @@ mod tests {
         );
         let anim = animation(
             AnimationKind::Path(track),
-            smil(1.0, vec![interval(0.0, Some(2.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(2.0))], true),
             linear(),
             Additive::Replace,
             Accumulate::Sum,
@@ -331,7 +342,7 @@ mod tests {
         ]);
         let anim = animation(
             AnimationKind::FillRule(track),
-            smil(1.0, vec![interval(0.0, Some(2.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(2.0))], true),
             discrete(),
             Additive::Replace,
             Accumulate::Sum,
@@ -348,13 +359,13 @@ mod tests {
         // the by-animation adds half its range (5) onto the base -> 105.
         let base = width_animation(
             &[100.0],
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             Additive::Replace,
             Accumulate::None,
         );
         let by = width_animation(
             &[0.0, 10.0],
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             Additive::Sum,
             Accumulate::None,
         );
@@ -373,7 +384,7 @@ mod tests {
         let path = Arc::new(builder.finish().unwrap());
         let anim = animation(
             AnimationKind::Motion(MotionTrack::new(path, None, MotionRotate::Auto)),
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             linear(),
             Additive::Replace,
             Accumulate::None,
@@ -390,7 +401,7 @@ mod tests {
         // t=2 is past the [0,1) interval with fill=remove: nothing contributes.
         let anim = width_animation(
             &[50.0],
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Remove),
+            smil(1.0, vec![interval(0.0, Some(1.0))], false),
             Additive::Replace,
             Accumulate::None,
         );
@@ -404,7 +415,7 @@ mod tests {
         // An important static declaration suppresses its animation entirely.
         let suppressed = Arc::new(Animation::new(
             AnimationKind::StrokeWidth(width_track(&[50.0])),
-            smil(1.0, vec![interval(0.0, Some(1.0))], SmilFill::Freeze),
+            smil(1.0, vec![interval(0.0, Some(1.0))], true),
             linear(),
             Additive::Replace,
             Accumulate::None,
@@ -418,17 +429,19 @@ mod tests {
 
     #[test]
     fn css_timing_function_shapes_the_sampled_progress() {
-        let animation = width_animation(
-            &[0.0, 100.0],
-            Timing::Css(CssTiming::new(
-                2.0,
-                0.0,
-                Iterations::Count(1.0),
+        let animation = animation(
+            AnimationKind::StrokeWidth(width_track(&[0.0, 100.0])),
+            Timing::new(
+                vec![TimedInterval::new(
+                    Interval::new_relative(0.0, 2.0),
+                    Some(1.0),
+                )],
+                Some(2.0),
                 Direction::Normal,
-                CssFillMode::Both,
-                TimingFunction::CubicBezier(0.42, 0.0, 1.0, 1.0),
-                PlayState::Running,
-            )),
+                Some(0.0),
+                Some(2.0),
+            ),
+            linear().with_timing_function(TimingFunction::CubicBezier(0.42, 0.0, 1.0, 1.0)),
             Additive::Replace,
             Accumulate::None,
         );

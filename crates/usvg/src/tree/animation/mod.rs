@@ -29,8 +29,7 @@ pub use kinds::{
     Accumulate, Additive, Animation, AnimationKind, AnimationSource, AnimationVisibility,
 };
 pub use timing::{
-    Begin, CalcMode, CssFillMode, CssTiming, Direction, Dur, Easing, Interval, Iterations,
-    KeyOffset, PlayState, RepeatCount, Restart, SmilFill, SmilTiming, StepPosition, Timing,
+    CalcMode, Direction, Easing, Interval, KeyOffset, StepPosition, TimedInterval, Timing,
     TimingFunction,
 };
 pub use tracks::{

@@ -4,11 +4,11 @@
 use svgtypes::Color;
 use tiny_skia::Transform;
 use usvg::{
-    Accumulate, Additive, Animation, AnimationKind, AnimationVisibility, NodeAnimation, Timing,
+    Accumulate, Additive, Animation, AnimationKind, AnimationVisibility, NodeAnimation,
     TimingFunction, TransformTrack,
 };
 
-use super::super::interpolate::{SampledValue, interpolate_track_with_timing};
+use super::super::interpolate::{interpolate_track_with_timing, SampledValue};
 use super::accumulate::{accumulate, add_color};
 use super::sandwich::Contribution;
 use super::{ImageGeometry, SampledOverrides};
@@ -20,7 +20,7 @@ pub(super) fn fold(
     contribution: &Contribution,
 ) {
     let animation = contribution.animation;
-    let timing_function = css_timing_function(animation);
+    let timing_function = animation_timing_function(animation);
     let Some(sampled) = interpolate_track_with_timing(
         animation.kind(),
         animation.easing(),
@@ -121,11 +121,8 @@ fn apply(
     }
 }
 
-fn css_timing_function(animation: &Animation) -> Option<&TimingFunction> {
-    match animation.timing() {
-        Timing::Css(timing) => Some(timing.timing_function()),
-        Timing::Smil(_) => None,
-    }
+fn animation_timing_function(animation: &Animation) -> Option<&TimingFunction> {
+    animation.easing().timing_function()
 }
 
 /// Records a gradient stop or geometry override keyed by its arrival order.

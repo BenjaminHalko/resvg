@@ -26,16 +26,16 @@ mod cross_crate_tests {
         let keyframe = usvg::Keyframe::new(usvg::NormalizedF32::new(0.0).unwrap(), rect, None);
         let track = usvg::Track::new(vec![keyframe]);
         let easing = usvg::Easing::new(usvg::CalcMode::Linear, None, None);
-        let timing = usvg::Timing::Smil(usvg::SmilTiming::new(
-            vec![usvg::Begin::Offset(0.0)],
-            usvg::Dur::Seconds(1.0),
-            vec![],
+        let timing = usvg::Timing::new(
+            vec![usvg::TimedInterval::new(
+                usvg::Interval::new(0.0, Some(1.0)),
+                Some(1.0),
+            )],
+            Some(1.0),
+            usvg::Direction::Normal,
             None,
-            None,
-            usvg::SmilFill::Freeze,
-            usvg::Restart::Always,
-            vec![usvg::Interval::new(0.0, Some(1.0))],
-        ));
+            Some(1.0),
+        );
 
         let animation =
             usvg::ViewBoxAnimation::new(track, svgtypes::AspectRatio::default(), timing, easing);

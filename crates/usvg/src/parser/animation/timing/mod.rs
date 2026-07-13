@@ -14,11 +14,9 @@ pub(crate) use syncbase::{RawBegin, SyncEdge};
 #[cfg(test)]
 use crate::parser::svgtree::{NodeId, SvgNode};
 #[cfg(test)]
-use crate::tree::animation::{Begin, CalcMode, Dur, Easing, Restart, SmilFill, SmilTiming};
+use crate::tree::animation::{CalcMode, Easing, Timing};
 #[cfg(test)]
 use clock::parse_clock_value;
-#[cfg(test)]
-use intervals::begin_instant;
 
 #[cfg(test)]
 mod tests {
@@ -63,7 +61,7 @@ mod tests {
         WARNINGS.with(|slot| slot.borrow_mut().take().unwrap_or_default())
     }
 
-    fn timing_of(svg: &str, id: &str) -> SmilTiming {
+    fn timing_of(svg: &str, id: &str) -> Timing {
         let xml = roxmltree::Document::parse(svg).unwrap();
         let doc = Document::parse_tree(&xml, None).unwrap();
         let all: Vec<(NodeId, SvgNode)> = doc
@@ -90,8 +88,12 @@ mod tests {
         parse_easing(node, values_count)
     }
 
-    fn offsets(begins: &[Begin]) -> Vec<f32> {
-        begins.iter().filter_map(begin_instant).collect()
+    fn begins(timing: &Timing) -> Vec<f32> {
+        timing
+            .intervals()
+            .iter()
+            .map(|interval| interval.interval().begin())
+            .collect()
     }
 
     #[test]
@@ -114,7 +116,7 @@ mod tests {
              </rect></svg>"
         );
         let timing = timing_of(&svg, "a");
-        assert_eq!(offsets(timing.begins()), vec![0.0, 2.0, 4.0]);
+        assert_eq!(begins(&timing), vec![0.0, 2.0, 4.0]);
     }
 
     #[test]
@@ -123,8 +125,8 @@ mod tests {
             "<svg xmlns='{NS}'><rect><animate id='a' attributeName='opacity'/></rect></svg>"
         );
         let timing = timing_of(&svg, "a");
-        assert!(matches!(timing.begins(), [Begin::Offset(v)] if *v == 0.0));
-        assert!(matches!(timing.dur(), Dur::Indefinite));
+        assert_eq!(begins(&timing), vec![0.0]);
+        assert_eq!(timing.iteration_dur(), None);
     }
 
     #[test]
@@ -135,7 +137,7 @@ mod tests {
              </rect></svg>"
         );
         let timing = timing_of(&svg, "a");
-        assert!(timing.begins().is_empty());
+        assert!(timing.intervals().is_empty());
     }
 
     #[test]
@@ -147,7 +149,7 @@ mod tests {
         );
         let warnings = capture(|| {
             let timing = timing_of(&svg, "a");
-            assert!(timing.begins().is_empty());
+            assert!(timing.intervals().is_empty());
         });
         assert!(warnings.contains(&"Unsupported animation begin/end value: 'click'.".to_string()));
     }
@@ -176,7 +178,7 @@ mod tests {
              </rect></svg>"
         );
         let timing = timing_of(&svg, "c");
-        assert_eq!(offsets(timing.begins()), vec![6.0]);
+        assert_eq!(begins(&timing), vec![6.0]);
     }
 
     #[test]
@@ -189,7 +191,7 @@ mod tests {
         );
         let warnings = capture(|| {
             let timing = timing_of(&svg, "b");
-            assert!(timing.begins().is_empty());
+            assert!(timing.intervals().is_empty());
         });
         assert!(
             warnings.contains(&"Unsupported animation begin/end value: 'a.end+1s'.".to_string())
@@ -205,7 +207,7 @@ mod tests {
              </rect></svg>"
         );
         let timing = timing_of(&svg, "b");
-        assert!(timing.begins().is_empty());
+        assert!(timing.intervals().is_empty());
     }
 
     #[test]
@@ -217,7 +219,7 @@ mod tests {
              </rect></svg>"
         );
         let timing = timing_of(&svg, "b");
-        assert!(timing.begins().is_empty());
+        assert!(timing.intervals().is_empty());
     }
 
     #[test]
@@ -230,10 +232,10 @@ mod tests {
         let timing = timing_of(&svg, "a");
         let intervals = timing.intervals();
         assert_eq!(intervals.len(), 2);
-        assert_eq!(intervals[0].begin(), 0.0);
-        assert_eq!(intervals[0].end(), Some(2.0));
-        assert_eq!(intervals[1].begin(), 3.0);
-        assert_eq!(intervals[1].end(), Some(5.0));
+        assert_eq!(intervals[0].interval().begin(), 0.0);
+        assert_eq!(intervals[0].interval().end(), Some(2.0));
+        assert_eq!(intervals[1].interval().begin(), 3.0);
+        assert_eq!(intervals[1].interval().end(), Some(5.0));
     }
 
     #[test]
@@ -256,7 +258,7 @@ mod tests {
         );
         let timing = timing_of(&svg, "a");
         assert_eq!(timing.intervals().len(), 1);
-        assert_eq!(timing.intervals()[0].begin(), 1.0);
+        assert_eq!(timing.intervals()[0].interval().begin(), 1.0);
     }
 
     #[test]
@@ -269,8 +271,8 @@ mod tests {
         let timing = timing_of(&svg, "a");
         let intervals = timing.intervals();
         assert_eq!(intervals.len(), 1);
-        assert_eq!(intervals[0].begin(), 0.0);
-        assert_eq!(intervals[0].end(), Some(1.0));
+        assert_eq!(intervals[0].interval().begin(), 0.0);
+        assert_eq!(intervals[0].interval().end(), Some(1.0));
     }
 
     #[test]
@@ -283,10 +285,10 @@ mod tests {
         let timing = timing_of(&svg, "a");
         let intervals = timing.intervals();
         assert_eq!(intervals.len(), 2);
-        assert_eq!(intervals[0].begin(), 0.0);
-        assert_eq!(intervals[0].end(), Some(1.0));
-        assert_eq!(intervals[1].begin(), 2.0);
-        assert_eq!(intervals[1].end(), Some(12.0));
+        assert_eq!(intervals[0].interval().begin(), 0.0);
+        assert_eq!(intervals[0].interval().end(), Some(1.0));
+        assert_eq!(intervals[1].interval().begin(), 2.0);
+        assert_eq!(intervals[1].interval().end(), Some(12.0));
     }
 
     #[test]
@@ -299,8 +301,8 @@ mod tests {
         let timing = timing_of(&svg, "a");
         let intervals = timing.intervals();
         assert_eq!(intervals.len(), 1);
-        assert_eq!(intervals[0].begin(), 1.0);
-        assert_eq!(intervals[0].end(), Some(1.0));
+        assert_eq!(intervals[0].interval().begin(), 1.0);
+        assert_eq!(intervals[0].interval().end(), Some(1.0));
     }
 
     #[test]
@@ -309,10 +311,10 @@ mod tests {
             "<svg xmlns='{NS}'><rect><set id='a' attributeName='opacity' to='0.5' begin='1s' dur='0s' fill='freeze'/></rect></svg>"
         );
         let timing = timing_of(&svg, "a");
-        assert!(matches!(timing.dur(), Dur::Seconds(seconds) if *seconds == 0.0));
+        assert_eq!(timing.iteration_dur(), None);
         assert_eq!(timing.intervals().len(), 1);
-        assert_eq!(timing.intervals()[0].begin(), 1.0);
-        assert_eq!(timing.intervals()[0].end(), Some(1.0));
+        assert_eq!(timing.intervals()[0].interval().begin(), 1.0);
+        assert_eq!(timing.intervals()[0].interval().end(), Some(1.0));
     }
 
     #[test]
@@ -325,11 +327,9 @@ mod tests {
         );
         let warnings = capture(|| {
             let timing = timing_of(&svg, "a");
-            assert!(timing.begins().is_empty());
+            assert!(timing.intervals().is_empty());
         });
-        assert!(
-            warnings.contains(&"Unsupported animation begin/end value: 'b.begin'.".to_string())
-        );
+        assert!(warnings.contains(&"Unsupported animation begin/end value: 'b.begin'.".to_string()));
     }
 
     #[test]
@@ -340,8 +340,8 @@ mod tests {
         let timing = timing_of(&svg, "a");
         let intervals = timing.intervals();
         assert_eq!(intervals.len(), 1);
-        assert_eq!(intervals[0].begin(), 0.0);
-        assert_eq!(intervals[0].end(), None);
+        assert_eq!(intervals[0].interval().begin(), 0.0);
+        assert_eq!(intervals[0].interval().end(), None);
     }
 
     #[test]
@@ -354,8 +354,8 @@ mod tests {
         let timing = timing_of(&svg, "a");
         let intervals = timing.intervals();
         assert_eq!(intervals.len(), 1);
-        assert_eq!(intervals[0].begin(), 0.0);
-        assert_eq!(intervals[0].end(), Some(6.0));
+        assert_eq!(intervals[0].interval().begin(), 0.0);
+        assert_eq!(intervals[0].interval().end(), Some(6.0));
     }
 
     #[test]
@@ -366,8 +366,7 @@ mod tests {
              </rect></svg>"
         );
         let timing = timing_of(&svg, "a");
-        assert!(matches!(timing.fill(), SmilFill::Remove));
-        assert!(matches!(timing.restart(), Restart::Always));
+        assert_eq!(timing.intervals()[0].held(), None);
     }
 
     #[test]
@@ -378,7 +377,7 @@ mod tests {
              </rect></svg>"
         );
         let timing = timing_of(&svg, "a");
-        assert!(matches!(timing.fill(), SmilFill::Freeze));
+        assert_eq!(timing.intervals()[0].held(), Some(1.0));
     }
 
     #[test]

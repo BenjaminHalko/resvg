@@ -3,16 +3,16 @@
 
 use std::sync::Arc;
 
-use crate::NormalizedF32;
 use crate::parser::svgtree::{AId, Document, EId, SvgNode};
 use crate::tree::animation::{
-    Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, CssTiming, Easing,
-    Keyframe, Timing, TimingFunction, Track, TransformBox, TransformOrigin, TransformTrack,
+    Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, Easing, Keyframe,
+    Timing, TimingFunction, Track, TransformBox, TransformOrigin, TransformTrack,
 };
+use crate::NormalizedF32;
 
 use self::metadata::{
-    cycle, longhand_list, parse_direction, parse_fill_mode, parse_iterations, parse_play_state,
-    parse_time, read_transform_box, read_transform_origin, split_list,
+    bake_timing, cycle, is_paused, longhand_list, parse_direction, parse_fill_mode,
+    parse_iterations, parse_time, read_transform_box, read_transform_origin, split_list,
 };
 use self::timing::parse_timing_function;
 use self::transform::parse_transform_functions;
@@ -70,21 +70,23 @@ pub(crate) fn build_css_animations<'a, 'input>(
             continue;
         };
 
-        let timing = CssTiming::new(
+        let timing = bake_timing(
             parse_time(cycle(&durations, index).unwrap_or("0s")).unwrap_or(0.0),
             parse_time(cycle(&delays, index).unwrap_or("0s")).unwrap_or(0.0),
             parse_iterations(cycle(&iteration_counts, index).unwrap_or("1")),
             parse_direction(cycle(&directions, index).unwrap_or("normal")),
             parse_fill_mode(cycle(&fill_modes, index).unwrap_or("none")),
+            is_paused(cycle(&play_states, index).unwrap_or("running")),
+        );
+        let easing = Easing::new(CalcMode::Linear, None, None).with_timing_function(
             parse_timing_function(cycle(&timing_functions, index).unwrap_or("ease"))
                 .unwrap_or(TimingFunction::Linear),
-            parse_play_state(cycle(&play_states, index).unwrap_or("running")),
         );
 
         for property in animated_properties(rule) {
-            if let Some(animation) =
-                build_property_animation(node, rule, &property, is_stop, timing, origin, box_)
-            {
+            if let Some(animation) = build_property_animation(
+                node, rule, &property, is_stop, &timing, &easing, origin, box_,
+            ) {
                 animations.push(animation);
             }
         }
@@ -111,7 +113,8 @@ fn build_property_animation(
     rule: &KeyframesRule,
     property: &str,
     is_stop: bool,
-    timing: CssTiming,
+    timing: &Timing,
+    easing: &Easing,
     origin: TransformOrigin,
     box_: TransformBox,
 ) -> Option<Arc<Animation>> {
@@ -161,8 +164,8 @@ fn build_property_animation(
 
     Some(Arc::new(Animation::new(
         kind,
-        Timing::Css(timing),
-        Easing::new(CalcMode::Linear, None, None),
+        timing.clone(),
+        easing.clone(),
         Additive::Replace,
         Accumulate::None,
         AnimationSource::Css,

@@ -278,10 +278,7 @@ fn has_animated_content(group: &usvg::Group) -> bool {
 #[cfg(feature = "animation")]
 pub fn root_view_box_transform(tree: &usvg::Tree, time: f32) -> Option<tiny_skia::Transform> {
     let animation = tree.view_box_animation()?;
-    let progress = match animation.timing() {
-        usvg::Timing::Smil(smil) => crate::animation::timing::smil_progress(smil, time)?,
-        usvg::Timing::Css(css) => crate::animation::timing::css_progress(css, time)?,
-    };
+    let progress = crate::animation::timing::progress(animation.timing(), time)?;
     let kind = usvg::AnimationKind::ViewBox(animation.track().clone());
     match crate::animation::interpolate::interpolate_track(&kind, animation.easing(), progress)? {
         crate::animation::interpolate::SampledValue::ViewBox(rect) => {
