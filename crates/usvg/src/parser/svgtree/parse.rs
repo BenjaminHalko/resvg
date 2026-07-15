@@ -350,10 +350,7 @@ pub(crate) fn parse_svg_element<'input>(
         }
     };
 
-    let mut write_declaration = |declaration: &Declaration, from_style_attr: bool| {
-        #[cfg(not(feature = "animation"))]
-        let _ = from_style_attr;
-
+    let mut write_declaration = |declaration: &Declaration| {
         #[cfg(not(feature = "animation"))]
         if AId::from_str(declaration.name).is_some_and(|aid| aid.is_animation()) {
             return;
@@ -369,9 +366,7 @@ pub(crate) fn parse_svg_element<'input>(
         #[cfg(feature = "animation")]
         if let Some(aid) = AId::from_str(declaration.name) {
             if is_css_animation_property(aid) {
-                if from_style_attr {
-                    log::warn!("CSS animations in the style attribute are not supported.");
-                } else if aid == AId::Animation {
+                if aid == AId::Animation {
                     match crate::parser::animation::shorthand::expand_animation_shorthand(val) {
                         Some(longhands) => {
                             insert_attribute(AId::AnimationName, &longhands.name, imp);
@@ -464,7 +459,7 @@ pub(crate) fn parse_svg_element<'input>(
     for rule in &style_sheet.rules {
         if rule.selector.matches(&XmlNode(xml_node)) {
             for declaration in &rule.declarations {
-                write_declaration(declaration, false);
+                write_declaration(declaration);
             }
         }
     }
@@ -472,7 +467,7 @@ pub(crate) fn parse_svg_element<'input>(
     // Split a `style` attribute.
     if let Some(value) = xml_node.attribute("style") {
         for declaration in simplecss::DeclarationTokenizer::from(value) {
-            write_declaration(&declaration, true);
+            write_declaration(&declaration);
         }
     }
 
@@ -1193,7 +1188,7 @@ mod tests {
 
     #[cfg(feature = "animation")]
     #[test]
-    fn inline_style_animation_is_dropped() {
+    fn inline_style_animation_shorthand_expands() {
         let xml = roxmltree::Document::parse(
             "<svg xmlns='http://www.w3.org/2000/svg'>\
              <rect id='r' style='animation: move 4s'/></svg>",
@@ -1202,9 +1197,11 @@ mod tests {
         let doc = Document::parse_tree(&xml, None).unwrap();
         let rect = doc.element_by_id("r").unwrap();
 
-        assert!(!rect.has_attribute(AId::Animation));
-        assert!(!rect.has_attribute(AId::AnimationName));
-        assert!(!rect.has_attribute(AId::AnimationDuration));
+        assert_eq!(rect.try_attribute::<&str>(AId::AnimationName), Some("move"));
+        assert_eq!(
+            rect.try_attribute::<&str>(AId::AnimationDuration),
+            Some("4s")
+        );
     }
 
     #[cfg(feature = "animation")]

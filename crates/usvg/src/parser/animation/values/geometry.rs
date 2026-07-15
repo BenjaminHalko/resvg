@@ -6,10 +6,10 @@ use std::str::FromStr;
 use crate::tree::animation::{AnimationKind, Track};
 use crate::{NonZeroRect, NormalizedF32};
 
-use super::attributes::{warned, warned_geometry, AttributeContext};
-use super::forms::{build_forms, Forms};
-use super::opacity::parse_opacity;
 use super::SmilValues;
+use super::attributes::{AttributeContext, warned, warned_geometry};
+use super::forms::{Forms, build_forms};
+use super::opacity::parse_opacity;
 
 pub(super) fn parse_offset_attribute(context: AttributeContext<'_>) -> Option<SmilValues> {
     let AttributeContext {

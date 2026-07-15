@@ -18,8 +18,8 @@ pub(super) fn read_transform_origin(node: SvgNode, state: &converter::State) -> 
             read_transform_box(node),
         ),
         None => CssOrigin::new(
-            OriginComponent::Percent(50.0),
-            OriginComponent::Percent(50.0),
+            OriginComponent::Absolute(0.0),
+            OriginComponent::Absolute(0.0),
             read_transform_box(node),
         ),
     }
@@ -43,7 +43,8 @@ pub(super) fn read_transform_box(node: SvgNode) -> CssBox {
         Some("border-box") => CssBox::Border,
         Some("fill-box") => CssBox::Fill,
         Some("stroke-box") => CssBox::Stroke,
-        _ => CssBox::View,
+        Some("view-box") => CssBox::View,
+        _ => CssBox::Fill,
     }
 }
 
@@ -226,9 +227,5 @@ fn directed_progress(raw: f32, direction: Direction, at_end: bool) -> f32 {
         Direction::Alternate => (iteration % 2.0) >= 1.0,
         Direction::AlternateReverse => (iteration % 2.0) < 1.0,
     };
-    if reverse {
-        1.0 - progress
-    } else {
-        progress
-    }
+    if reverse { 1.0 - progress } else { progress }
 }

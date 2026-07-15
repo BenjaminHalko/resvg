@@ -329,7 +329,9 @@ mod tests {
             let timing = timing_of(&svg, "a");
             assert!(timing.intervals().is_empty());
         });
-        assert!(warnings.contains(&"Unsupported animation begin/end value: 'b.begin'.".to_string()));
+        assert!(
+            warnings.contains(&"Unsupported animation begin/end value: 'b.begin'.".to_string())
+        );
     }
 
     #[test]

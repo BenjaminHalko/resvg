@@ -103,11 +103,7 @@ fn directed_progress(raw: f32, direction: Direction, at_end: bool) -> f32 {
         Direction::Alternate => (iteration % 2.0) >= 1.0,
         Direction::AlternateReverse => (iteration % 2.0) < 1.0,
     };
-    if reverse {
-        1.0 - progress
-    } else {
-        progress
-    }
+    if reverse { 1.0 - progress } else { progress }
 }
 
 #[cfg(test)]

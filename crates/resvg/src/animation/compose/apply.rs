@@ -8,7 +8,7 @@ use usvg::{
     TimingFunction,
 };
 
-use super::super::interpolate::{interpolate_track_with_timing, SampledValue};
+use super::super::interpolate::{SampledValue, interpolate_track_with_timing};
 use super::accumulate::{accumulate, add_color};
 use super::sandwich::Contribution;
 use super::{ImageGeometry, SampledOverrides};

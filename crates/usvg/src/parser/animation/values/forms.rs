@@ -3,8 +3,8 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::tree::animation::{Accumulate, Additive, Keyframe};
 use crate::NormalizedF32;
+use crate::tree::animation::{Accumulate, Additive, Keyframe};
 
 use super::attributes::{warn_invalid_value, warn_unsupported_accumulate};
 

@@ -8,10 +8,10 @@ use std::str::FromStr;
 use svgtypes::Length;
 
 use super::super::geom::{
-    bake_geometry_animation, bake_geometry_animation_with_sum_base, ShapeGeometry,
+    ShapeGeometry, bake_geometry_animation, bake_geometry_animation_with_sum_base,
 };
 use super::super::values::forms::Forms;
-use super::super::values::{parse_resolved_geometry_values, SmilValues};
+use super::super::values::{SmilValues, parse_resolved_geometry_values};
 use crate::parser::converter;
 use crate::parser::svgtree::{AId, EId, SvgNode};
 use crate::tree::animation::{Accumulate, Additive, AnimationKind, Easing};

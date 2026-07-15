@@ -1,13 +1,11 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::{
-    FillRule, LineCap, LineJoin, NonZeroRect, NormalizedF32, Opacity, Rect, StrokeMiterlimit,
-};
+use crate::{FillRule, LineCap, LineJoin, NonZeroRect, NormalizedF32, Opacity, StrokeMiterlimit};
 
 use super::{
-    CssBox, CssOrigin, Easing, MotionTrack, OriginComponent, PathTrack, Timing, Track,
-    TransformFunction,
+    CssBox, CssOrigin, CssOriginBounds, Easing, MotionTrack, OriginComponent, PathTrack, Timing,
+    Track, TransformFunction,
 };
 
 /// The source of an animation — SMIL or CSS.
@@ -224,7 +222,7 @@ impl Animation {
     }
 
     /// Bakes a CSS transform origin into each transform-function keyframe.
-    pub(crate) fn bake_css_origin(&mut self, fill_bounds: Rect, stroke_bounds: Rect) {
+    pub(crate) fn bake_css_origin(&mut self, bounds: CssOriginBounds) {
         let Some(origin) = self.css_origin.take() else {
             return;
         };
@@ -232,8 +230,9 @@ impl Animation {
             return;
         };
         let bounds = match origin.box_ {
-            CssBox::Stroke => stroke_bounds,
-            CssBox::Content | CssBox::Border | CssBox::Fill | CssBox::View => fill_bounds,
+            CssBox::Stroke => bounds.stroke,
+            CssBox::Content | CssBox::Border | CssBox::Fill => bounds.fill,
+            CssBox::View => bounds.view,
         };
         let x = resolve_origin_component(origin.x, bounds.x(), bounds.width());
         let y = resolve_origin_component(origin.y, bounds.y(), bounds.height());
@@ -295,5 +294,6 @@ fn resolve_origin_component(component: OriginComponent, offset: f32, extent: f32
     match component {
         OriginComponent::Length(value) => offset + value,
         OriginComponent::Percent(value) => offset + extent * value / 100.0,
+        OriginComponent::Absolute(value) => value,
     }
 }

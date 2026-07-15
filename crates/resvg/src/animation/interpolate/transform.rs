@@ -94,9 +94,11 @@ fn paced_signature(functions: &[TransformFunction]) -> PacedSignature {
         [TransformFunction::SkewX(_)] => PacedSignature::SkewX,
         [TransformFunction::SkewY(_)] => PacedSignature::SkewY,
         [TransformFunction::Rotate(_)] => PacedSignature::Rotate,
-        [TransformFunction::Translate(_, _), TransformFunction::Rotate(_), TransformFunction::Translate(_, _)] => {
-            PacedSignature::RotateAt
-        }
+        [
+            TransformFunction::Translate(_, _),
+            TransformFunction::Rotate(_),
+            TransformFunction::Translate(_, _),
+        ] => PacedSignature::RotateAt,
         _ => PacedSignature::Other,
     }
 }

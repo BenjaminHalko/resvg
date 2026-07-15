@@ -8,7 +8,8 @@ use std::str::FromStr;
 use svgtypes::{Length, LengthUnit as Unit};
 
 use super::super::values::forms::Forms;
-use super::super::values::{parse_resolved_geometry_values, SmilValues};
+use super::super::values::{SmilValues, parse_resolved_geometry_values};
+use crate::Units;
 use crate::parser::converter;
 use crate::parser::paint_server::{convert_units, resolve_number};
 use crate::parser::svgtree::{AId, EId, SvgNode};
@@ -16,7 +17,6 @@ use crate::parser::units;
 use crate::tree::animation::{
     Accumulate, Additive, AnimationKind, Easing, GradientGeometry, GradientGeometryComponent,
 };
-use crate::Units;
 
 pub(super) fn is_image_geometry(target: SvgNode, attribute_name: &str) -> bool {
     target.tag_name() == Some(EId::Image)

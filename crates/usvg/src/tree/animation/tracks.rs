@@ -92,6 +92,19 @@ pub(crate) struct CssOrigin {
     pub(crate) box_: CssBox,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CssOriginBounds {
+    pub(crate) fill: crate::Rect,
+    pub(crate) stroke: crate::Rect,
+    pub(crate) view: crate::Rect,
+}
+
+impl CssOriginBounds {
+    pub(crate) fn new(fill: crate::Rect, stroke: crate::Rect, view: crate::Rect) -> Self {
+        Self { fill, stroke, view }
+    }
+}
+
 impl CssOrigin {
     pub(crate) fn new(x: OriginComponent, y: OriginComponent, box_: CssBox) -> Self {
         Self { x, y, box_ }
@@ -103,6 +116,7 @@ impl CssOrigin {
 pub(crate) enum OriginComponent {
     Length(f32),
     Percent(f32),
+    Absolute(f32),
 }
 
 /// The static bounds selector needed while baking a CSS transform origin.

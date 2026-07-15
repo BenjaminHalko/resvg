@@ -3,17 +3,18 @@
 
 use std::sync::Arc;
 
+use crate::NormalizedF32;
 use crate::parser::svgtree::{AId, Document, EId, SvgNode};
 use crate::tree::animation::{
     Accumulate, Additive, Animation, AnimationKind, AnimationSource, CalcMode, CssOrigin, Easing,
     Keyframe, Timing, TimingFunction, Track,
 };
-use crate::NormalizedF32;
 
 use self::metadata::{
     bake_timing, cycle, is_paused, longhand_list, parse_direction, parse_fill_mode,
     parse_iterations, parse_time, read_transform_origin, split_list,
 };
+use self::path::build_css_path_track;
 use self::timing::parse_timing_function;
 use self::transform::parse_transform_functions;
 use self::values::{
@@ -22,6 +23,7 @@ use self::values::{
 use super::keyframes::KeyframesRule;
 
 mod metadata;
+mod path;
 mod timing;
 mod transform;
 mod values;
@@ -107,6 +109,7 @@ enum CssProperty {
     StrokeDashoffset,
     StopColor,
     StopOpacity,
+    D,
 }
 
 /// Builds a single property animation from one `@keyframes` rule.
@@ -126,7 +129,9 @@ fn build_property_animation(
         return None;
     }
 
-    let Some(css_property) = classify_property(property, is_stop) else {
+    let Some(css_property) =
+        classify_property(property, is_stop, node.tag_name() == Some(EId::Path))
+    else {
         log::warn!("Unsupported CSS property in keyframes: '{}'.", property);
         return None;
     };
@@ -137,6 +142,7 @@ fn build_property_animation(
         return None;
     }
 
+    let mut easing = easing.clone();
     let kind = match css_property {
         CssProperty::Transform => {
             let keyframes = typed_keyframes(&entries, parse_transform_functions);
@@ -160,12 +166,17 @@ fn build_property_animation(
         CssProperty::StopOpacity => {
             AnimationKind::StopOpacity(build_track(&entries, parse_css_opacity)?)
         }
+        CssProperty::D => {
+            let bake = build_css_path_track(&entries)?;
+            easing.calc_mode = bake.calc_mode;
+            bake.kind
+        }
     };
 
     let animation = Animation::new(
         kind,
         timing.clone(),
-        easing.clone(),
+        easing,
         Additive::Replace,
         Accumulate::None,
         AnimationSource::Css,
@@ -180,8 +191,9 @@ fn build_property_animation(
 
 /// Classifies a CSS property name against the supported set.
 ///
-/// `stop-color`/`stop-opacity` are only admitted on `<stop>` targets.
-fn classify_property(property: &str, is_stop: bool) -> Option<CssProperty> {
+/// `stop-color`/`stop-opacity` are only admitted on `<stop>` targets, while
+/// `d` is only admitted on `<path>` targets.
+fn classify_property(property: &str, is_stop: bool, is_path: bool) -> Option<CssProperty> {
     if property.eq_ignore_ascii_case("transform") {
         Some(CssProperty::Transform)
     } else if property.eq_ignore_ascii_case("opacity") {
@@ -198,6 +210,8 @@ fn classify_property(property: &str, is_stop: bool) -> Option<CssProperty> {
         Some(CssProperty::StopColor)
     } else if is_stop && property.eq_ignore_ascii_case("stop-opacity") {
         Some(CssProperty::StopOpacity)
+    } else if is_path && property.eq_ignore_ascii_case("d") {
+        Some(CssProperty::D)
     } else {
         None
     }

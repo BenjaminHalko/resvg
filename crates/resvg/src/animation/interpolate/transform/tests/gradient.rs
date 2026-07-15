@@ -23,9 +23,11 @@ fn x11_gradient_transform_has_no_css_origin_wrapper() {
     let matrix = sample(track, &linear(), 0.5);
 
     // Then: no CSS origin wrapper appears on a gradientTransform track.
-    assert!(track
-        .keyframes()
-        .iter()
-        .all(|keyframe| matches!(keyframe.value().as_slice(), [TransformFunction::Rotate(_)])));
+    assert!(
+        track
+            .keyframes()
+            .iter()
+            .all(|keyframe| matches!(keyframe.value().as_slice(), [TransformFunction::Rotate(_)]))
+    );
     approx_transform(matrix, Transform::from_rotate(45.0));
 }

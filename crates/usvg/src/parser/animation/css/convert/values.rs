@@ -3,10 +3,10 @@
 
 use std::str::FromStr;
 
+use crate::Opacity;
 use crate::parser::converter;
 use crate::parser::svgtree::{AId, SvgNode};
 use crate::parser::units;
-use crate::Opacity;
 
 pub(super) fn parse_css_opacity(value: &str) -> Option<Opacity> {
     let length = svgtypes::Length::from_str(value).ok()?;

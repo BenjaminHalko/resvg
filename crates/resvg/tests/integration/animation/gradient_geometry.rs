@@ -43,8 +43,14 @@ fn radial_focal_omission() {
     let explicit_actual = render_at_pixmap(explicit, 1.0);
 
     // Then: only the omitted focal x follows the animated center.
-    assert_eq!(omitted_actual.data(), render_pixmap(omitted_expected).data());
-    assert_eq!(explicit_actual.data(), render_pixmap(explicit_expected).data());
+    assert_eq!(
+        omitted_actual.data(),
+        render_pixmap(omitted_expected).data()
+    );
+    assert_eq!(
+        explicit_actual.data(),
+        render_pixmap(explicit_expected).data()
+    );
 }
 
 #[test]
@@ -87,6 +93,12 @@ fn radial_nonpositive_carrier() {
     let after = rgb_at(&render_at_pixmap(svg, 0.75), 50, 50);
 
     // Then: non-positive r is a solid last stop, while positive r restores the gradient.
-    assert!(before.2 > 200 && before.0 < 60, "expected last-stop blue, got {before:?}");
-    assert!(after.0 > 200 && after.2 < 60, "expected first-stop red, got {after:?}");
+    assert!(
+        before.2 > 200 && before.0 < 60,
+        "expected last-stop blue, got {before:?}"
+    );
+    assert!(
+        after.0 > 200 && after.2 < 60,
+        "expected first-stop red, got {after:?}"
+    );
 }

@@ -1,7 +1,7 @@
 use tiny_skia::Transform;
 use usvg::TransformFunction;
 
-use super::common::{approx, approx_transform, paced, sample, smil_track, PACED_WARNING};
+use super::common::{PACED_WARNING, approx, approx_transform, paced, sample, smil_track};
 
 #[test]
 fn x4_varying_rotate_center_falls_back_to_linear() {

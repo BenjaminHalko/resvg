@@ -137,7 +137,10 @@ fn smil_shape_image_axes() {
     ];
 
     // Then: every physical-unit keyframe equals its static component.
-    assert_eq!(image_values, [static_x, static_y, static_width, static_height]);
+    assert_eq!(
+        image_values,
+        [static_x, static_y, static_width, static_height]
+    );
 }
 
 #[test]
@@ -201,11 +204,13 @@ fn geometry_invalid_units() {
     // Then: the resolved invalid value is dropped and reports the static-space scalar.
     assert_eq!(track.keyframes().len(), 1);
     assert_eq!(track.keyframes()[0].path().bounds().width(), 20.0);
-    assert!(WARNINGS
-        .get()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|warning| warning == "Invalid geometry animation value: '-20'."));
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "Invalid geometry animation value: '-20'.")
+    );
 }

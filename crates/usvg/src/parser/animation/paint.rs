@@ -18,8 +18,8 @@ use svgtypes::{Length, LengthUnit as Unit};
 use super::collect::collect_node_animations;
 use crate::parser::converter::{self, SvgColorExt};
 use crate::parser::paint_server::{
-    convert_spread_method, convert_units, find_gradient_with_stops, radial_focal_is_omitted,
-    resolve_number, ServerOrColor,
+    ServerOrColor, convert_spread_method, convert_units, find_gradient_with_stops,
+    radial_focal_is_omitted, resolve_number,
 };
 use crate::parser::svgtree::{AId, EId, SvgNode};
 use crate::tree::animation::{GradientAnimation, SourceStop};

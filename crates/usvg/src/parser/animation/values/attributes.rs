@@ -3,14 +3,14 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use crate::NormalizedF32;
 use crate::tree::animation::{
     Accumulate, Additive, AnimationKind, CalcMode, Keyframe, Track, TransformFunction,
 };
-use crate::NormalizedF32;
 
-use super::forms::{build_forms, Forms};
+use super::forms::{Forms, build_forms};
 use super::stroke::parse_number_list;
-use super::{geometry, opacity, paint, presentation, stroke, BaseValue, SmilValues};
+use super::{BaseValue, SmilValues, geometry, opacity, paint, presentation, stroke};
 
 pub(super) struct AttributeContext<'a> {
     pub(super) forms: &'a Forms<'a>,

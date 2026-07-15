@@ -1735,6 +1735,115 @@ impl Tree {
         self.view_box_animation.as_deref()
     }
 
+    /// Visits each resolved animation timing in the tree exactly once.
+    ///
+    /// This includes the root `viewBox`, node animations in the root and
+    /// referenced subroots, embedded SVG images, gradients, and gradient source
+    /// stops. The accompanying [`animation::Accumulate`] describes whether a
+    /// consumer must accumulate repeated iterations.
+    #[cfg(feature = "animation")]
+    pub fn visit_animation_timings(
+        &self,
+        f: &mut impl FnMut(&animation::Timing, animation::Accumulate),
+    ) {
+        fn visit_animation(
+            animation: &animation::Animation,
+            f: &mut dyn FnMut(&animation::Timing, animation::Accumulate),
+        ) {
+            f(animation.timing(), animation.accumulate());
+        }
+
+        fn visit_node_animation(
+            animation: Option<&animation::NodeAnimation>,
+            f: &mut dyn FnMut(&animation::Timing, animation::Accumulate),
+        ) {
+            if let Some(animation) = animation {
+                for animation in animation.animations() {
+                    if matches!(animation.kind(), animation::AnimationKind::ViewBox(_)) {
+                        continue;
+                    }
+                    visit_animation(animation, f);
+                }
+            }
+        }
+
+        fn visit_gradient(
+            gradient: &animation::GradientAnimation,
+            f: &mut dyn FnMut(&animation::Timing, animation::Accumulate),
+        ) {
+            for animation in gradient.animations() {
+                visit_animation(animation, f);
+            }
+            for stop in gradient.source_stops() {
+                for animation in stop.animations() {
+                    visit_animation(animation, f);
+                }
+            }
+        }
+
+        fn visit_group(
+            group: &Group,
+            f: &mut dyn FnMut(&animation::Timing, animation::Accumulate),
+        ) {
+            visit_node_animation(group.animation(), f);
+            for node in group.children() {
+                match node {
+                    Node::Group(group) => visit_group(group, f),
+                    Node::Path(path) => visit_node_animation(path.animation(), f),
+                    Node::Image(image) => {
+                        visit_node_animation(image.animation(), f);
+                        if let ImageKind::SVG(tree) = image.kind() {
+                            visit_tree(tree, f);
+                        }
+                    }
+                    Node::Text(_) => {}
+                }
+            }
+        }
+
+        fn visit_filter(
+            filter: &filter::Filter,
+            f: &mut dyn FnMut(&animation::Timing, animation::Accumulate),
+        ) {
+            for primitive in &filter.primitives {
+                if let filter::Kind::Image(image) = &primitive.kind {
+                    visit_group(image.root(), f);
+                }
+            }
+        }
+
+        fn visit_tree(tree: &Tree, f: &mut dyn FnMut(&animation::Timing, animation::Accumulate)) {
+            if let Some(animation) = tree.view_box_animation() {
+                f(animation.timing(), animation::Accumulate::None);
+            }
+            visit_group(tree.root(), f);
+            for pattern in tree.patterns() {
+                visit_group(pattern.root(), f);
+            }
+            for clip_path in tree.clip_paths() {
+                visit_group(clip_path.root(), f);
+            }
+            for mask in tree.masks() {
+                visit_group(mask.root(), f);
+            }
+            for filter in tree.filters() {
+                visit_filter(filter, f);
+            }
+            for gradient in tree.linear_gradients() {
+                if let Some(animation) = gradient.animation() {
+                    visit_gradient(animation, f);
+                }
+            }
+            for gradient in tree.radial_gradients() {
+                if let Some(animation) = gradient.animation() {
+                    visit_gradient(animation, f);
+                }
+            }
+        }
+
+        visit_tree(self, f);
+    }
+
     /// Whether the tree contains any animation.
     ///
     /// Covers node, gradient, gradient-stop, and root `viewBox` animations.

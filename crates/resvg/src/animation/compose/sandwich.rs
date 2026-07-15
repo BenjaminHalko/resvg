@@ -4,8 +4,8 @@
 use usvg::{Animation, AnimationSource, NodeAnimation};
 
 use super::super::timing::{interval_at, iteration_at, progress};
-use super::apply::{fold, ImageState};
 use super::SampledOverrides;
+use super::apply::{ImageState, fold};
 
 /// One animation that contributes to the sandwich at the query time.
 pub(super) struct Contribution<'a> {

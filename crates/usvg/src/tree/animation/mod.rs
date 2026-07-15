@@ -33,7 +33,7 @@ pub use timing::{
     CalcMode, Direction, Easing, Interval, KeyOffset, StepPosition, TimedInterval, Timing,
     TimingFunction,
 };
-pub(crate) use tracks::{CssBox, CssOrigin, OriginComponent};
+pub(crate) use tracks::{CssBox, CssOrigin, CssOriginBounds, OriginComponent};
 pub use tracks::{
     Keyframe, MotionRotate, MotionTrack, PathKeyframe, PathTrack, Track, TransformFunction,
 };

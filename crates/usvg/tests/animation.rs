@@ -6,12 +6,16 @@
 use std::sync::{Mutex, Once, OnceLock};
 
 use usvg::{
-    Additive, AnimationKind, AnimationSource, CalcMode, Direction, Node, Options, StepPosition,
-    TimingFunction, TransformFunction, Tree,
+    Accumulate, Additive, AnimationKind, AnimationSource, CalcMode, Direction, Node, Options,
+    StepPosition, TimingFunction, TransformFunction, Tree,
 };
 
+#[path = "animation/css_path.rs"]
+mod css_path;
 #[path = "animation/geometry_units.rs"]
 mod geometry_units;
+#[path = "animation/malformed_path.rs"]
+mod malformed_path;
 
 const NS: &str = "http://www.w3.org/2000/svg";
 const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JTxAAAAAASUVORK5CYII=";
@@ -244,13 +248,15 @@ fn text_animation_warns_without_attachment() {
         "<text x='0' y='10'>text<animate attributeName='opacity' from='0' to='1' dur='1s'/></text><rect width='4' height='4'/>",
     );
     assert!(matches!(tree.root().children()[0], Node::Path(_)));
-    assert!(WARNINGS
-        .get()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|warning| warning == "Animation of text elements is not supported."));
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "Animation of text elements is not supported.")
+    );
 }
 
 #[test]
@@ -261,13 +267,15 @@ fn remote_text_animation_warns_without_attachment() {
     let _tree = parse(
         "<animate xlink:href='#text' attributeName='x' to='10' dur='1s' xmlns:xlink='http://www.w3.org/1999/xlink'/><rect width='4' height='4'/>",
     );
-    assert!(WARNINGS
-        .get()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|warning| warning == "Animation of text elements is not supported."));
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "Animation of text elements is not supported.")
+    );
 }
 
 #[test]
@@ -276,10 +284,11 @@ fn gradient_shared_by_two_shapes_keeps_tracks() {
         "<defs><linearGradient id='g'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='1s'/></stop><stop offset='1' stop-color='blue'/></linearGradient></defs><rect width='4' height='4' fill='url(#g)'/><rect width='4' height='4' fill='url(#g)'/>",
     );
     assert_eq!(tree.linear_gradients().len(), 2);
-    assert!(tree
-        .linear_gradients()
-        .iter()
-        .all(|gradient| gradient.animation().is_some()));
+    assert!(
+        tree.linear_gradients()
+            .iter()
+            .all(|gradient| gradient.animation().is_some())
+    );
 }
 
 #[test]
@@ -354,10 +363,11 @@ fn clone_preservation_across_different_bboxes() {
         "<defs><linearGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animate attributeName='x1' from='0' to='1' dur='1s'/></linearGradient></defs><rect width='10' height='10' fill='url(#g)'/><rect width='4' height='8' fill='url(#g)'/>",
     );
     assert_eq!(tree.linear_gradients().len(), 2);
-    assert!(tree
-        .linear_gradients()
-        .iter()
-        .all(|gradient| gradient.animation().is_some()));
+    assert!(
+        tree.linear_gradients()
+            .iter()
+            .all(|gradient| gradient.animation().is_some())
+    );
 }
 
 #[test]
@@ -380,13 +390,15 @@ fn view_box_narrowing_keeps_first_warns_second() {
     );
     let animation = tree.view_box_animation().unwrap();
     assert_eq!(animation.track().keyframes()[1].value().width(), 10.0);
-    assert!(WARNINGS
-        .get()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|warning| warning == "Only a single non-additive viewBox animation is supported."));
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "Only a single non-additive viewBox animation is supported.")
+    );
 }
 
 #[test]
@@ -514,6 +526,56 @@ fn additive_transform_pair_is_preserved() {
         Additive::Replace
     ));
     assert!(matches!(wrapper.animations()[1].additive(), Additive::Sum));
+}
+
+#[test]
+fn smil_transform_additive_and_accumulate_are_preserved() {
+    // Given: a repeating SMIL transform that composes and accumulates a delta.
+    let tree = parse(
+        "<rect width='4' height='4'><animateTransform attributeName='transform' type='translate' from='0 0' to='10 0' additive='sum' accumulate='sum' dur='1s' repeatCount='3'/></rect>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+
+    // When: the parser lowers the SMIL transform into the public model.
+    let AnimationKind::Transform(track) = animation.kind() else {
+        panic!("expected a transform track");
+    };
+
+    // Then: the downstream player receives both composition flags and exact delta endpoints.
+    assert!(matches!(animation.additive(), Additive::Sum));
+    assert!(matches!(animation.accumulate(), Accumulate::Sum));
+    assert_eq!(animation.timing().iteration_dur(), Some(1.0));
+    assert_eq!(
+        animation.timing().intervals()[0].interval().end(),
+        Some(3.0)
+    );
+    assert!(matches!(
+        track.keyframes()[1].value().as_slice(),
+        [TransformFunction::Translate(x, y)] if *x == 10.0 && *y == 0.0
+    ));
+}
+
+#[test]
+fn smil_geometry_accumulation_delta_is_exposed() {
+    // Given: a repeating SMIL geometry animation that accumulates a scalar delta.
+    let tree = parse(
+        "<rect width='10' height='10'><animate attributeName='x' from='0' to='10' accumulate='sum' dur='1s' repeatCount='3'/></rect>",
+    );
+    let animation = &path(&tree.root().children()[0])
+        .animation()
+        .unwrap()
+        .animations()[0];
+
+    // When: the parser bakes the geometry track.
+    let AnimationKind::Path(track) = animation.kind() else {
+        panic!("expected a path track");
+    };
+
+    // Then: the typed accumulation delta preserves the one-iteration x offset.
+    assert!(matches!(animation.accumulate(), Accumulate::Sum));
+    let delta = track.accumulation_delta().unwrap();
+    assert!(delta.points().iter().all(|point| point.x == 10.0));
+    assert!(delta.points().iter().all(|point| point.y == 0.0));
 }
 
 #[test]
@@ -745,6 +807,18 @@ fn css_two_animations_attach_to_one_node() {
 }
 
 #[test]
+fn css_inline_animation_shorthand_attaches_to_the_target() {
+    let tree = parse(
+        "<style>@keyframes fade { from { opacity: 1; } to { opacity: 0; } }</style><rect width='4' height='4' style='animation: fade 4s linear'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+
+    assert!(matches!(animation.source(), AnimationSource::Css));
+    assert_eq!(animation.timing().iteration_dur(), Some(4.0));
+    assert!(matches!(animation.kind(), AnimationKind::Opacity(_)));
+}
+
+#[test]
 fn css_percent_keyframe_offset_is_placed() {
     let tree = parse(
         "<style>@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } } #box { animation: pulse 4s linear; }</style><rect id='box' width='4' height='4'/>",
@@ -756,6 +830,26 @@ fn css_percent_keyframe_offset_is_placed() {
     assert_eq!(track.keyframes().len(), 3);
     assert_eq!(track.keyframes()[1].offset().get(), 0.5);
     assert_eq!(track.keyframes()[1].value().get(), 0.5);
+}
+
+#[test]
+fn css_partial_opacity_keeps_only_explicit_keyframe() {
+    // Given: a CSS opacity animation with only an explicit middle keyframe.
+    let tree = parse(
+        "<style>@keyframes fade { 50% { opacity: 0.5; } } #box { animation: fade 4s linear; }</style><rect id='box' width='4' height='4'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Opacity(track) = animation.kind() else {
+        panic!("expected a CSS opacity track");
+    };
+
+    // When: the parser exposes the raw animation track.
+    let keyframes = track.keyframes();
+
+    // Then: endpoint synthesis remains outside usvg.
+    assert_eq!(keyframes.len(), 1);
+    assert_eq!(keyframes[0].offset().get(), 0.5);
+    assert_eq!(keyframes[0].value().get(), 0.5);
 }
 
 #[test]
@@ -778,6 +872,63 @@ fn css_transform_origin_percent_values_are_baked() {
 }
 
 #[test]
+fn css_transform_origin_defaults_to_svg_zero() {
+    let tree = parse(
+        "<style>@keyframes grow { from { transform: scale(1); } to { transform: scale(2); } } #box { animation: grow 4s linear; }</style><rect id='box' x='30' y='40' width='10' height='10'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Transform(track) = animation.kind() else {
+        panic!("expected a CSS transform track");
+    };
+    assert!(matches!(
+        track.keyframes()[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Scale(sx, sy),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 0.0 && *y0 == 0.0 && *sx == 1.0 && *sy == 1.0 && *x1 == 0.0 && *y1 == 0.0
+    ));
+}
+
+#[test]
+fn css_transform_endpoints_preserve_fractional_scale_with_zero_origin() {
+    // Given: a CSS scale animation whose endpoints distinguish 10 from 10.5.
+    let tree = parse(
+        "<style>@keyframes grow { from { transform: scale(10); } to { transform: scale(10.5); } } #box { animation: grow 1s linear; }</style><rect id='box' x='30' y='40' width='10' height='10'/>",
+    );
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Transform(track) = animation.kind() else {
+        panic!("expected a CSS transform track");
+    };
+
+    // When: the parser emits raw transform keyframes and finite timing.
+    let keyframes = track.keyframes();
+
+    // Then: both exact endpoints and the unheld active interval reach downstream unchanged.
+    assert_eq!(
+        animation.timing().intervals()[0].interval().end(),
+        Some(1.0)
+    );
+    assert_eq!(animation.timing().intervals()[0].held(), None);
+    assert!(matches!(
+        keyframes[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Scale(sx, sy),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 0.0 && *y0 == 0.0 && *sx == 10.0 && *sy == 10.0 && *x1 == 0.0 && *y1 == 0.0
+    ));
+    assert!(matches!(
+        keyframes[1].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Scale(sx, sy),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 0.0 && *y0 == 0.0 && *sx == 10.5 && *sy == 10.5 && *x1 == 0.0 && *y1 == 0.0
+    ));
+}
+
+#[test]
 fn css_transform_origin_uses_stroke_box_when_requested() {
     let tree = parse(
         "<style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(90deg); } } #box { transform-origin: 100% 50%; transform-box: stroke-box; animation: spin 4s linear; }</style><rect id='box' width='10' height='10' stroke='black' stroke-width='10'/>",
@@ -793,6 +944,30 @@ fn css_transform_origin_uses_stroke_box_when_requested() {
             TransformFunction::Rotate(angle),
             TransformFunction::Translate(x1, y1),
         ] if *x0 == 15.0 && *y0 == 5.0 && *angle == 0.0 && *x1 == -15.0 && *y1 == -5.0
+    ));
+}
+
+#[test]
+fn css_view_box_transform_origin_uses_svg_view_box() {
+    let tree = Tree::from_str(
+        &format!(
+            "<svg xmlns='{NS}' width='100' height='100' viewBox='0 0 100 100'><style>@keyframes spin {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(90deg); }} }} #hand {{ transform-box: view-box; transform-origin: 50px 50px; animation: spin 4s linear; }}</style><path id='hand' d='M50 50 L50 10' stroke='black'/></svg>"
+        ),
+        &Options::default(),
+    )
+    .unwrap();
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Transform(track) = animation.kind() else {
+        panic!("expected a CSS transform track");
+    };
+
+    assert!(matches!(
+        track.keyframes()[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Rotate(angle),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 50.0 && *y0 == 50.0 && *angle == 0.0 && *x1 == -50.0 && *y1 == -50.0
     ));
 }
 
@@ -852,13 +1027,15 @@ fn css_unknown_keyframes_name_warns() {
     let _tree = parse(
         "<style>#box { animation: missing 4s linear; }</style><rect id='box' width='4' height='4'/>",
     );
-    assert!(WARNINGS
-        .get()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|warning| warning == "Unknown keyframes name: 'missing'."));
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "Unknown keyframes name: 'missing'.")
+    );
 }
 
 #[test]
@@ -869,13 +1046,15 @@ fn css_unsupported_property_warns() {
     let _tree = parse(
         "<style>@keyframes shift { from { color: red; } to { color: blue; } } #box { animation: shift 4s linear; }</style><rect id='box' width='4' height='4'/>",
     );
-    assert!(WARNINGS
-        .get()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|warning| warning == "Unsupported CSS property in keyframes: 'color'."));
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "Unsupported CSS property in keyframes: 'color'.")
+    );
 }
 
 #[test]
@@ -886,13 +1065,15 @@ fn css_variables_are_not_supported_warns() {
     let _tree = parse(
         "<style>@keyframes shift { from { fill: var(--a); } to { fill: var(--b); } } #box { animation: shift 4s linear; }</style><rect id='box' width='4' height='4'/>",
     );
-    assert!(WARNINGS
-        .get()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|warning| warning == "CSS variables are not supported."));
+    assert!(
+        WARNINGS
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|warning| warning == "CSS variables are not supported.")
+    );
 }
 
 #[test]
@@ -941,4 +1122,49 @@ fn css_animation_duration_includes_delay() {
     assert!(tree.has_animations());
     // 1s delay + 3s duration; infinite iteration collapses to one loop.
     assert_eq!(tree.animation_duration(), Some(4.0));
+}
+
+#[test]
+fn tree_visits_each_animation_timing_once_across_carriers() {
+    // Given: animations on root nodes, referenced subroots, images, gradients, stops, and viewBox.
+    let tree = parse(&format!(
+        "<animate attributeName='viewBox' from='0 0 20 20' to='0 0 40 40' dur='1s'/><defs><pattern id='pattern' width='4' height='4' patternUnits='userSpaceOnUse'><rect width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='3s'/></rect></pattern><clipPath id='clip'><rect width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='4s'/></rect></clipPath><mask id='mask'><rect width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='5s'/></rect></mask><linearGradient id='linear'><stop offset='0' stop-color='red'><animate attributeName='stop-color' from='red' to='blue' dur='8s'/></stop><stop offset='1' stop-color='blue'/><animate attributeName='x1' from='0' to='10' dur='7s'/></linearGradient><radialGradient id='radial'><stop offset='0' stop-color='red'><animate attributeName='stop-opacity' from='1' to='0.5' dur='10s'/></stop><stop offset='1' stop-color='blue'/><animate attributeName='r' from='1' to='10' dur='9s'/></radialGradient></defs><rect width='4' height='4' fill='url(#pattern)' clip-path='url(#clip)' mask='url(#mask)'><animate attributeName='opacity' from='0' to='1' dur='2s' accumulate='sum'/></rect><rect x='5' width='4' height='4' fill='url(#pattern)' clip-path='url(#clip)'/><rect y='5' width='4' height='4' fill='url(#linear)'/><rect x='5' y='5' width='4' height='4' fill='url(#radial)'/><image href='{PNG}' width='4' height='4'><animate attributeName='opacity' from='0' to='1' dur='6s'/></image>"
+    ));
+
+    // When: a consumer preflights every resolved animation timing.
+    let mut durations = Vec::new();
+    let mut accumulate_sum_count = 0;
+    tree.visit_animation_timings(&mut |timing, accumulate| {
+        durations.push(timing.iteration_dur().unwrap());
+        if matches!(accumulate, Accumulate::Sum) {
+            accumulate_sum_count += 1;
+        }
+    });
+    durations.sort_by(f32::total_cmp);
+
+    // Then: shared subroots are not duplicated and every carrier contributes once.
+    assert_eq!(
+        durations,
+        (1..=10).map(|value| value as f32).collect::<Vec<_>>()
+    );
+    assert_eq!(accumulate_sum_count, 1);
+}
+
+#[test]
+fn tree_timing_visitor_preserves_distinct_resolved_gradient_clones() {
+    // Given: one gradient resolved independently for three paint references.
+    let tree = parse(
+        "<defs><linearGradient id='g'><stop offset='0' stop-color='red'/><stop offset='1' stop-color='blue'/><animate attributeName='x1' from='0' to='1' dur='7s'/></linearGradient></defs><rect width='10' height='10' fill='url(#g)' stroke='url(#g)'/><rect x='20' width='4' height='8' fill='url(#g)'/>",
+    );
+
+    // When: a consumer visits resolved timing carriers.
+    let mut durations = Vec::new();
+    tree.visit_animation_timings(&mut |timing, _| {
+        durations.push(timing.iteration_dur().unwrap());
+    });
+    durations.sort_by(f32::total_cmp);
+
+    // Then: each distinct resolved gradient carrier contributes its timing exactly once.
+    assert_eq!(tree.linear_gradients().len(), 3);
+    assert_eq!(durations, vec![7.0, 7.0, 7.0]);
 }

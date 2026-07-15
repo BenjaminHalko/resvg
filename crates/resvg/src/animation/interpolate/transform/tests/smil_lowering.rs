@@ -44,10 +44,12 @@ fn x3_rotate_lowering_preserves_parameter_lerp() {
     let midpoint = sample(&track, &linear(), 0.5);
 
     // Then: centered rotate becomes a uniform translate/rotate/translate list.
-    assert!(track
-        .keyframes()
-        .iter()
-        .all(|keyframe| keyframe.value().len() == 3));
+    assert!(
+        track
+            .keyframes()
+            .iter()
+            .all(|keyframe| keyframe.value().len() == 3)
+    );
     approx_transform(midpoint, Transform::from_rotate_at(135.0, 6.0, 1.0));
     assert!(midpoint.ky > 0.0);
 }

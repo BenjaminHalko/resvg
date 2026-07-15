@@ -16,7 +16,7 @@ mod paint;
 mod presentation;
 mod stroke;
 
-pub(crate) use attributes::{parse_smil_transform_values, parse_smil_values, SmilTransformType};
+pub(crate) use attributes::{SmilTransformType, parse_smil_transform_values, parse_smil_values};
 pub(crate) use base_value::{BaseValue, SmilValues};
 pub(crate) use geometry::parse_resolved_geometry_values;
 

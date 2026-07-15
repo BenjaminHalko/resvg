@@ -96,7 +96,7 @@ fn parse_path_data(data: &str) -> Option<(Path, bool)> {
     let mut last_move = None;
     let mut renderable = false;
     for segment in svgtypes::SimplifyingPathParser::from(data) {
-        let Ok(segment) = segment else { break };
+        let Ok(segment) = segment else { return None };
         match segment {
             svgtypes::SimplePathSegment::MoveTo { x, y } => {
                 let point = (x as f32, y as f32);

@@ -7,9 +7,9 @@ use std::sync::Arc;
 use strict_num::PositiveF32;
 use svgtypes::{Length, LengthUnit as Unit};
 
+use super::OptionLog;
 use super::converter::{self, Cache, SvgColorExt};
 use super::svgtree::{AId, EId, SvgNode};
-use super::OptionLog;
 use crate::*;
 
 pub(crate) enum ServerOrColor {
