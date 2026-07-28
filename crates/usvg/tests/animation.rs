@@ -972,6 +972,30 @@ fn css_view_box_transform_origin_uses_svg_view_box() {
 }
 
 #[test]
+fn css_transform_origin_defaults_to_svg_view_box() {
+    let tree = Tree::from_str(
+        &format!(
+            "<svg xmlns='{NS}' width='100' height='100' viewBox='0 0 100 100'><style>@keyframes spin {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(90deg); }} }} #hand {{ transform-origin: 50px 50px; animation: spin 4s linear; }}</style><path id='hand' d='M50 50 L50 10' stroke='black'/></svg>"
+        ),
+        &Options::default(),
+    )
+    .unwrap();
+    let animation = &group(&tree.root().children()[0]).animations()[0];
+    let AnimationKind::Transform(track) = animation.kind() else {
+        panic!("expected a CSS transform track");
+    };
+
+    assert!(matches!(
+        track.keyframes()[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Rotate(angle),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 50.0 && *y0 == 50.0 && *angle == 0.0 && *x1 == -50.0 && *y1 == -50.0
+    ));
+}
+
+#[test]
 fn css_stroke_width_is_a_renderable_track() {
     let tree = parse(
         "<style>@keyframes grow { from { stroke-width: 1; } to { stroke-width: 8; } } #line { animation: grow 4s linear; }</style><path id='line' d='M0 0 L4 4' stroke='black' stroke-width='1'/>",

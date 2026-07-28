@@ -44,7 +44,7 @@ pub(super) fn read_transform_box(node: SvgNode) -> CssBox {
         Some("fill-box") => CssBox::Fill,
         Some("stroke-box") => CssBox::Stroke,
         Some("view-box") => CssBox::View,
-        _ => CssBox::Fill,
+        _ => CssBox::View,
     }
 }
 
