@@ -229,13 +229,19 @@ impl Animation {
         let AnimationKind::Transform(track) = &mut self.kind else {
             return;
         };
-        let bounds = match origin.box_ {
-            CssBox::Stroke => bounds.stroke,
-            CssBox::Content | CssBox::Border | CssBox::Fill => bounds.fill,
-            CssBox::View => bounds.view,
+        // css-transforms `transform-box`: fill/stroke boxes sit at the
+        // element's bounding box corner, but the view-box reference box is
+        // positioned at the origin of the coordinate system the viewBox
+        // establishes — not at the viewBox min corner.
+        let (base_x, base_y, extent) = match origin.box_ {
+            CssBox::Stroke => (bounds.stroke.x(), bounds.stroke.y(), bounds.stroke),
+            CssBox::Content | CssBox::Border | CssBox::Fill => {
+                (bounds.fill.x(), bounds.fill.y(), bounds.fill)
+            }
+            CssBox::View => (0.0, 0.0, bounds.view),
         };
-        let x = resolve_origin_component(origin.x, bounds.x(), bounds.width());
-        let y = resolve_origin_component(origin.y, bounds.y(), bounds.height());
+        let x = resolve_origin_component(origin.x, base_x, extent.width());
+        let y = resolve_origin_component(origin.y, base_y, extent.height());
         for keyframe in &mut track.keyframes {
             let mut functions = Vec::with_capacity(keyframe.value.len() + 2);
             functions.push(TransformFunction::Translate(x, y));

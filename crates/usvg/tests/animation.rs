@@ -867,7 +867,7 @@ fn css_transform_origin_percent_values_are_baked() {
             TransformFunction::Translate(x0, y0),
             TransformFunction::Rotate(angle),
             TransformFunction::Translate(x1, y1),
-        ] if *x0 == 1.0 && *y0 == 3.0 && *angle == 0.0 && *x1 == -1.0 && *y1 == -3.0
+        ] if *x0 == 5.0 && *y0 == 15.0 && *angle == 0.0 && *x1 == -5.0 && *y1 == -15.0
     ));
 }
 
@@ -992,6 +992,36 @@ fn css_transform_origin_defaults_to_svg_view_box() {
             TransformFunction::Rotate(angle),
             TransformFunction::Translate(x1, y1),
         ] if *x0 == 50.0 && *y0 == 50.0 && *angle == 0.0 && *x1 == -50.0 && *y1 == -50.0
+    ));
+}
+
+#[test]
+fn css_view_box_transform_origin_ignores_view_box_min_corner() {
+    let tree = Tree::from_str(
+        &format!(
+            "<svg xmlns='{NS}' width='200' height='200' viewBox='-100 -100 200 200'><style>@keyframes pulse {{ from {{ transform: scale(0.5); }} to {{ transform: scale(1.5); }} }} #bolt {{ transform-origin: 0 0; animation: pulse 3s linear; }}</style><path id='bolt' d='M-4 -30 L16 4 L-4 30 Z' fill='green'/></svg>"
+        ),
+        &Options::default(),
+    )
+    .unwrap();
+    let outer = group(&tree.root().children()[0]);
+    let animated = if outer.animations().is_empty() {
+        group(&outer.children()[0])
+    } else {
+        outer
+    };
+    let animation = &animated.animations()[0];
+    let AnimationKind::Transform(track) = animation.kind() else {
+        panic!("expected a CSS transform track");
+    };
+
+    assert!(matches!(
+        track.keyframes()[0].value().as_slice(),
+        [
+            TransformFunction::Translate(x0, y0),
+            TransformFunction::Scale(sx, sy),
+            TransformFunction::Translate(x1, y1),
+        ] if *x0 == 0.0 && *y0 == 0.0 && *sx == 0.5 && *sy == 0.5 && *x1 == 0.0 && *y1 == 0.0
     ));
 }
 
