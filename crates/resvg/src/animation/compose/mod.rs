@@ -49,6 +49,9 @@ pub(crate) struct ImageGeometry {
 #[derive(Debug, Default)]
 pub(crate) struct SampledOverrides {
     pub(crate) transform: Option<Transform>,
+    /// Whether a `replace` transform contributed: `transform` then stands alone,
+    /// else it goes on top of the static transform.
+    pub(crate) transform_replaced: bool,
     pub(crate) opacity: Option<f32>,
     pub(crate) fill: Option<Color>,
     pub(crate) stroke: Option<Color>,
@@ -67,6 +70,18 @@ pub(crate) struct SampledOverrides {
     pub(crate) gradient_overrides: Vec<(usize, SampledValue)>,
     pub(crate) view_box: Option<NonZeroRect>,
     pub(crate) image_geometry: Option<ImageGeometry>,
+}
+
+impl SampledOverrides {
+    /// The node's transform: the static one `base` with the sampled transforms
+    /// over it (`additive="sum"`, `animateMotion`), or a sampled `replace` alone.
+    pub(crate) fn transform_over(&self, base: Transform) -> Transform {
+        match self.transform {
+            Some(sampled) if self.transform_replaced => sampled,
+            Some(sampled) => base.pre_concat(sampled),
+            None => base,
+        }
+    }
 }
 
 #[cfg(test)]

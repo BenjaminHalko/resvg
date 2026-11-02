@@ -717,3 +717,49 @@ fn animated_stroke_opacity_from_css_keyframes() {
     assert!((126..=129).contains(&half), "alpha {half}");
     assert_eq!(alpha_at(&render_at_pixmap(svg, 2.0), 10, 10), 0);
 }
+
+#[test]
+fn an_additive_transform_goes_on_top_of_the_static_one() {
+    // `additive="sum"` adds to the element's own transform: the rect stays moved right.
+    let svg = r#"<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="10" height="10" fill="red" transform="translate(40 0)">
+            <animateTransform attributeName="transform" type="translate" additive="sum"
+                from="0 0" to="0 10" dur="2s" fill="freeze"/>
+        </rect>
+    </svg>"#;
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 0.0)),
+        Some((40, 0, 49, 9))
+    );
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 2.0)),
+        Some((40, 10, 49, 19))
+    );
+}
+
+#[test]
+fn a_motion_goes_on_top_of_the_static_transform() {
+    let svg = r#"<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="10" height="10" fill="red" transform="translate(40 0)">
+            <animateMotion path="M0 0 V10" dur="2s" fill="freeze"/>
+        </rect>
+    </svg>"#;
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 2.0)),
+        Some((40, 10, 49, 19))
+    );
+}
+
+#[test]
+fn a_replacing_transform_stands_alone() {
+    let svg = r#"<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="10" height="10" fill="red" transform="translate(40 0)">
+            <animateTransform attributeName="transform" type="translate"
+                from="0 0" to="0 10" dur="2s" fill="freeze"/>
+        </rect>
+    </svg>"#;
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 2.0)),
+        Some((0, 10, 9, 19))
+    );
+}

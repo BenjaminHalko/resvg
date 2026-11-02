@@ -106,8 +106,10 @@ fn draw_children(
                 let group_transform = time
                     .zip(group.animation())
                     .map(|(t, anim)| crate::animation::compose::sample_overrides(anim, t))
-                    .and_then(|o| o.transform)
-                    .unwrap_or_else(|| group.transform());
+                    .map_or_else(
+                        || group.transform(),
+                        |o| o.transform_over(group.transform()),
+                    );
                 #[cfg(not(feature = "animation"))]
                 let group_transform = group.transform();
 

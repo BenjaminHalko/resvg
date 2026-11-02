@@ -60,6 +60,9 @@ fn apply(
 ) {
     match sampled {
         SampledValue::Transform(matrix) => {
+            if matches!(additive, Additive::Replace) {
+                overrides.transform_replaced = true;
+            }
             fold_transform(&mut overrides.transform, matrix, additive);
         }
         SampledValue::Motion(matrix) => {

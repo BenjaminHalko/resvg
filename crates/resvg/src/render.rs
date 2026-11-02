@@ -109,10 +109,10 @@ fn render_group(
 
     // An animated transform replaces the static group transform.
     #[cfg(feature = "animation")]
-    let group_transform = overrides
-        .as_ref()
-        .and_then(|o| o.transform)
-        .unwrap_or_else(|| group.transform());
+    let group_transform = overrides.as_ref().map_or_else(
+        || group.transform(),
+        |o| o.transform_over(group.transform()),
+    );
     #[cfg(not(feature = "animation"))]
     let group_transform = group.transform();
 
