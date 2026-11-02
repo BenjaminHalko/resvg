@@ -66,6 +66,8 @@ pub(crate) fn parse_smil_values(
     match attribute_name {
         "opacity" => opacity::parse_opacity_attribute(context),
         "stop-opacity" => opacity::parse_stop_opacity_attribute(context),
+        "fill-opacity" => opacity::parse_paint_opacity_attribute(context, false),
+        "stroke-opacity" => opacity::parse_paint_opacity_attribute(context, true),
         "fill" => paint::parse_fill_attribute(context),
         "stroke" => paint::parse_stroke_attribute(context),
         "stop-color" => paint::parse_stop_color_attribute(context),
@@ -218,25 +220,40 @@ pub(super) fn warned_geometry<T>(value: Option<T>, raw: &str) -> Option<T> {
 }
 
 fn warn_unsupported_attribute(name: &str) {
-    log::warn!("Unsupported animation attribute: '{}'.", name);
+    crate::parser::animation::report::report(
+        crate::AnimationWarningCode::UnsupportedAttribute,
+        Some(name),
+    );
 }
 
 pub(super) fn warn_unsupported_paint(value: &str) {
-    log::warn!("Unsupported paint value: '{}'.", value);
+    crate::parser::animation::report::report(
+        crate::AnimationWarningCode::UnsupportedPaint,
+        Some(value),
+    );
 }
 
 pub(super) fn warn_not_interpolable() {
-    log::warn!("Animation values are not interpolable; using discrete interpolation.");
+    crate::parser::animation::report::report(crate::AnimationWarningCode::NotInterpolable, None);
 }
 
 pub(super) fn warn_invalid_value(value: &str) {
-    log::warn!("Invalid animation value: '{}'.", value);
+    crate::parser::animation::report::report(
+        crate::AnimationWarningCode::InvalidValue,
+        Some(value),
+    );
 }
 
 pub(super) fn warn_invalid_geometry_value(value: &str) {
-    log::warn!("Invalid geometry animation value: '{}'.", value);
+    crate::parser::animation::report::report(
+        crate::AnimationWarningCode::InvalidGeometryValue,
+        Some(value),
+    );
 }
 
 pub(super) fn warn_unsupported_accumulate() {
-    log::warn!("Unsupported accumulate value; ignoring.");
+    crate::parser::animation::report::report(
+        crate::AnimationWarningCode::UnsupportedAccumulate,
+        None,
+    );
 }

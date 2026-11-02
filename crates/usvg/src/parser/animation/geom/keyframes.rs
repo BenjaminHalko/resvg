@@ -135,5 +135,8 @@ fn parse_path_data(data: &str) -> Option<(Path, bool)> {
 }
 
 pub(super) fn warn_invalid_geometry_value(value: impl std::fmt::Display) {
-    log::warn!("Invalid geometry animation value: '{}'.", value);
+    crate::parser::animation::report::report(
+        crate::AnimationWarningCode::InvalidGeometryValue,
+        Some(&value.to_string()),
+    );
 }

@@ -20,6 +20,7 @@ mod kinds;
 mod timing;
 mod tracks;
 mod view_box;
+mod warning;
 
 pub use carriers::{
     FillCarrierState, ImageCarrierState, NodeAnimation, PathCarrierState, StrokeCarrierState,
@@ -38,6 +39,7 @@ pub use tracks::{
     Keyframe, MotionRotate, MotionTrack, PathKeyframe, PathTrack, Track, TransformFunction,
 };
 pub use view_box::ViewBoxAnimation;
+pub use warning::{AnimationFidelity, AnimationWarning, AnimationWarningCode};
 
 #[cfg(test)]
 mod tests {
@@ -61,6 +63,8 @@ mod tests {
         let _ = AnimationKind::Opacity(Track::new(vec![]));
         let _ = AnimationKind::Fill(Track::new(vec![]));
         let _ = AnimationKind::Stroke(Track::new(vec![]));
+        let _ = AnimationKind::FillOpacity(Track::new(vec![]));
+        let _ = AnimationKind::StrokeOpacity(Track::new(vec![]));
         let _ = AnimationKind::StrokeWidth(Track::new(vec![]));
         let _ = AnimationKind::StrokeDashoffset(Track::new(vec![]));
         let _ = AnimationKind::StrokeDasharray(Track::new(vec![]));

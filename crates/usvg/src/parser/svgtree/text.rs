@@ -58,7 +58,14 @@ fn parse_svg_text_element_impl<'input>(
 
         #[cfg(feature = "animation")]
         if tag_name.is_animation() {
-            log::warn!("Animation of text elements is not supported.");
+            let text = parent
+                .ancestors()
+                .find(|n| super::parse::parse_tag_name(*n) == Some(EId::Text));
+            crate::parser::animation::report::report_on(
+                crate::AnimationWarningCode::TextAnimation,
+                text.and_then(|text| text.attribute("id")),
+                None,
+            );
             continue;
         }
 

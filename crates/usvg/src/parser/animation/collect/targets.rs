@@ -20,11 +20,13 @@ pub(crate) fn collect_node_animations(
     cache: &mut converter::Cache,
 ) -> Vec<Arc<Animation>> {
     if has_remote_text_animation(state.all_animations) {
-        log::warn!("Animation of text elements is not supported.");
+        crate::parser::animation::report::report(crate::AnimationWarningCode::TextAnimation, None);
     }
-    let mut animations = super::collect_animations(node, state.all_animations, state, cache);
-    animations.extend(css::build_css_animations(node, node.document(), state));
-    animations
+    crate::parser::animation::report::on_element(node, || {
+        let mut animations = super::collect_animations(node, state.all_animations, state, cache);
+        animations.extend(css::build_css_animations(node, node.document(), state));
+        animations
+    })
 }
 
 pub(crate) fn collect_animations(
@@ -88,7 +90,12 @@ pub(crate) fn collect_view_box_animation(
             continue;
         };
         if result.is_some() || matches!(animation.additive(), Additive::Sum) {
-            log::warn!("Only a single non-additive viewBox animation is supported.");
+            crate::parser::animation::report::on_element(node, || {
+                crate::parser::animation::report::report(
+                    crate::AnimationWarningCode::ExtraViewBoxAnimation,
+                    None,
+                )
+            });
             continue;
         }
         result = Some(ViewBoxAnimation::new(

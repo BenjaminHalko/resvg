@@ -20,19 +20,28 @@ pub(crate) fn parse_animate_motion(node: SvgNode) -> Option<(AnimationKind, Easi
         || node.has_attribute(AId::To)
         || node.has_attribute(AId::By)
     {
-        log::warn!("Unsupported animateMotion form.");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::UnsupportedMotionForm,
+            None,
+        );
         return None;
     }
 
     // `<mpath>` is an unknown element and is dropped during parsing, so its
     // presence surfaces here as a missing `path` attribute.
     let Some(path_data) = node.attribute::<&str>(AId::Path) else {
-        log::warn!("Unsupported animateMotion form.");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::UnsupportedMotionForm,
+            None,
+        );
         return None;
     };
 
     let Some(path) = parse_motion_path(path_data) else {
-        log::warn!("Invalid animateMotion path.");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::InvalidMotionPath,
+            None,
+        );
         return None;
     };
 
@@ -41,7 +50,10 @@ pub(crate) fn parse_animate_motion(node: SvgNode) -> Option<(AnimationKind, Easi
     let key_points = match parse_key_points(node) {
         Ok(points) => points,
         Err(()) => {
-            log::warn!("Invalid animateMotion path.");
+            crate::parser::animation::report::report(
+                crate::AnimationWarningCode::InvalidMotionPath,
+                None,
+            );
             return None;
         }
     };
@@ -50,7 +62,10 @@ pub(crate) fn parse_animate_motion(node: SvgNode) -> Option<(AnimationKind, Easi
     if let Some(points) = &key_points {
         let key_times_len = easing.key_times().map_or(0, |t| t.len());
         if points.len() != key_times_len {
-            log::warn!("Invalid animateMotion path.");
+            crate::parser::animation::report::report(
+                crate::AnimationWarningCode::InvalidMotionPath,
+                None,
+            );
             return None;
         }
     }

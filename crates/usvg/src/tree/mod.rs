@@ -1659,6 +1659,8 @@ pub struct Tree {
     pub(crate) fontdb: Arc<fontdb::Database>,
     #[cfg(feature = "animation")]
     pub(crate) view_box_animation: Option<Box<animation::ViewBoxAnimation>>,
+    #[cfg(feature = "animation")]
+    pub(crate) animation_warnings: Vec<animation::AnimationWarning>,
 }
 
 impl Tree {
@@ -1747,6 +1749,14 @@ impl Tree {
     #[cfg(feature = "animation")]
     pub fn view_box_animation(&self) -> Option<&animation::ViewBoxAnimation> {
         self.view_box_animation.as_deref()
+    }
+
+    /// The animations that couldn't be taken as written, each once, in the order met.
+    ///
+    /// Each is also logged with `log::warn!`.
+    #[cfg(feature = "animation")]
+    pub fn animation_warnings(&self) -> &[animation::AnimationWarning] {
+        &self.animation_warnings
     }
 
     /// Visits each resolved animation timing in the tree exactly once.

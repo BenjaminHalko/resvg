@@ -66,7 +66,12 @@ pub(crate) fn warn_text_animations(node: SvgNode, state: &converter::State) {
             .is_some_and(|target| target == node)
     });
     if nested || remote {
-        log::warn!("Animation of text elements is not supported.");
+        crate::parser::animation::report::on_element(node, || {
+            crate::parser::animation::report::report(
+                crate::AnimationWarningCode::TextAnimation,
+                None,
+            )
+        });
     }
 }
 
@@ -81,6 +86,11 @@ pub(crate) fn warn_filter_content_animations(node: SvgNode, state: &converter::S
         target.ancestors().any(|ancestor| ancestor == node)
     });
     if nested || remote {
-        log::warn!("Animation of filter content is not supported.");
+        crate::parser::animation::report::on_element(node, || {
+            crate::parser::animation::report::report(
+                crate::AnimationWarningCode::FilterContentAnimation,
+                None,
+            )
+        });
     }
 }

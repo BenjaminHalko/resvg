@@ -425,6 +425,8 @@ pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<
         fontdb: opt.fontdb.clone(),
         #[cfg(feature = "animation")]
         view_box_animation: None,
+        #[cfg(feature = "animation")]
+        animation_warnings: Vec::new(),
     };
 
     if !svg.is_visible_element(opt) {
@@ -1032,8 +1034,20 @@ fn convert_path(
     }
 
     let has_bbox = tiny_skia_path.bounds().width() > 0.0 && tiny_skia_path.bounds().height() > 0.0;
-    let mut fill = super::style::resolve_fill(node, has_bbox, state, cache);
-    let mut stroke = super::style::resolve_stroke(node, has_bbox, state, cache);
+    let fill_and_paint_opacity =
+        super::style::resolve_fill_and_paint_opacity(node, has_bbox, state, cache);
+    let stroke_and_paint_opacity =
+        super::style::resolve_stroke_and_paint_opacity(node, has_bbox, state, cache);
+    #[cfg(feature = "animation")]
+    let fill_paint_opacity = fill_and_paint_opacity
+        .as_ref()
+        .map_or(Opacity::ONE, |(_, opacity)| *opacity);
+    #[cfg(feature = "animation")]
+    let stroke_paint_opacity = stroke_and_paint_opacity
+        .as_ref()
+        .map_or(Opacity::ONE, |(_, opacity)| *opacity);
+    let mut fill = fill_and_paint_opacity.map(|(fill, _)| fill);
+    let mut stroke = stroke_and_paint_opacity.map(|(stroke, _)| stroke);
     #[cfg(feature = "animation")]
     let fill_carrier = super::style::resolve_fill_carrier(node, has_bbox, state, cache);
     #[cfg(feature = "animation")]
@@ -1164,14 +1178,17 @@ fn convert_path(
             || stroke_carrier.is_some()
             || !underlying_renderable
         {
-            path.animation = Some(Box::new(NodeAnimation::new(
+            let mut animation = NodeAnimation::new(
                 animations,
                 super::animation::collect::base_hidden(node),
                 Some(PathCarrierState::new(underlying_renderable)),
                 fill_carrier,
                 stroke_carrier,
                 None,
-            )));
+            );
+            animation.fill_paint_opacity = fill_paint_opacity;
+            animation.stroke_paint_opacity = stroke_paint_opacity;
+            path.animation = Some(Box::new(animation));
         }
     }
 

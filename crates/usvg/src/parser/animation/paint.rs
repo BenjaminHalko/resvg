@@ -222,7 +222,10 @@ fn stop_color(stop: SvgNode) -> (Color, Opacity) {
         Some(value) => match svgtypes::Color::from_str(value) {
             Ok(color) => color,
             Err(_) => {
-                log::warn!("Failed to parse stop-color value: '{}'.", value);
+                crate::parser::animation::report::report(
+                    crate::AnimationWarningCode::InvalidStopColor,
+                    Some(value),
+                );
                 svgtypes::Color::black()
             }
         },

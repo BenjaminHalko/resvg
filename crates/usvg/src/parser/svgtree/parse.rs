@@ -412,7 +412,11 @@ pub(crate) fn parse_svg_element<'input>(
                             insert_attribute(AId::AnimationPlayState, &longhands.play_state, imp);
                         }
                         None => {
-                            log::warn!("Invalid animation shorthand: '{}'.", val);
+                            crate::parser::animation::report::report_on(
+                                crate::AnimationWarningCode::InvalidAnimationShorthand,
+                                xml_node.attribute("id"),
+                                Some(val),
+                            );
                         }
                     }
                 } else {

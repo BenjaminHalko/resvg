@@ -689,3 +689,31 @@ fn fe_image_subtree_animation_renders_without_panic() {
         );
     }
 }
+
+#[test]
+fn animated_fill_opacity_fades_from_zero_keeping_the_paint_alpha() {
+    // A static `fill-opacity="0"` fades in; the color's own alpha (0.5) still applies.
+    let svg = r#"<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="20" height="20" fill="rgba(0,0,255,0.5)" fill-opacity="0">
+            <animate attributeName="fill-opacity" from="0" to="1" dur="2s" fill="freeze"/>
+        </rect>
+    </svg>"#;
+    assert_eq!(alpha_at(&render_at_pixmap(svg, 0.0), 10, 10), 0);
+    let half = alpha_at(&render_at_pixmap(svg, 1.0), 10, 10);
+    assert!((63..=65).contains(&half), "alpha {half}");
+    let full = alpha_at(&render_at_pixmap(svg, 2.0), 10, 10);
+    assert!((127..=129).contains(&full), "alpha {full}");
+}
+
+#[test]
+fn animated_stroke_opacity_from_css_keyframes() {
+    let svg = r#"<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        <style>@keyframes fade { from { stroke-opacity: 1 } to { stroke-opacity: 0 } }
+        #s { animation: fade 2s linear forwards; }</style>
+        <path id="s" d="M0 10 H20" stroke="red" stroke-width="10" fill="none"/>
+    </svg>"#;
+    assert_eq!(alpha_at(&render_at_pixmap(svg, 0.0), 10, 10), 255);
+    let half = alpha_at(&render_at_pixmap(svg, 1.0), 10, 10);
+    assert!((126..=129).contains(&half), "alpha {half}");
+    assert_eq!(alpha_at(&render_at_pixmap(svg, 2.0), 10, 10), 0);
+}

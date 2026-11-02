@@ -142,7 +142,10 @@ fn bake_geometry_animation_inner(
     let calc_mode = if interpolable {
         calc_mode
     } else {
-        log::warn!("Animation values are not interpolable; using discrete interpolation.");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::NotInterpolable,
+            None,
+        );
         CalcMode::Discrete
     };
 

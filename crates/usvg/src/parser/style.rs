@@ -51,14 +51,28 @@ pub(crate) fn resolve_fill(
     state: &converter::State,
     cache: &mut converter::Cache,
 ) -> Option<Fill> {
+    resolve_fill_and_paint_opacity(node, has_bbox, state, cache).map(|(fill, _)| fill)
+}
+
+/// Resolves the fill, and the opacity its paint carries itself (a color's
+/// alpha), which `fill-opacity` multiplies.
+pub(crate) fn resolve_fill_and_paint_opacity(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<(Fill, Opacity)> {
     if state.parent_clip_path.is_some() {
         // A `clipPath` child can be filled only with a black color.
-        return Some(Fill {
-            paint: Paint::Color(Color::black()),
-            opacity: Opacity::ONE,
-            rule: node.find_attribute(AId::ClipRule).unwrap_or_default(),
-            context_element: None,
-        });
+        return Some((
+            Fill {
+                paint: Paint::Color(Color::black()),
+                opacity: Opacity::ONE,
+                rule: node.find_attribute(AId::ClipRule).unwrap_or_default(),
+                context_element: None,
+            },
+            Opacity::ONE,
+        ));
     }
 
     let mut sub_opacity = Opacity::ONE;
@@ -82,12 +96,15 @@ pub(crate) fn resolve_fill(
         .find_attribute::<Opacity>(AId::FillOpacity)
         .unwrap_or(Opacity::ONE);
 
-    Some(Fill {
-        paint,
-        opacity: sub_opacity * fill_opacity,
-        rule: node.find_attribute(AId::FillRule).unwrap_or_default(),
-        context_element,
-    })
+    Some((
+        Fill {
+            paint,
+            opacity: sub_opacity * fill_opacity,
+            rule: node.find_attribute(AId::FillRule).unwrap_or_default(),
+            context_element,
+        },
+        sub_opacity,
+    ))
 }
 
 pub(crate) fn resolve_stroke(
@@ -96,6 +113,17 @@ pub(crate) fn resolve_stroke(
     state: &converter::State,
     cache: &mut converter::Cache,
 ) -> Option<Stroke> {
+    resolve_stroke_and_paint_opacity(node, has_bbox, state, cache).map(|(stroke, _)| stroke)
+}
+
+/// Resolves the stroke, and the opacity its paint carries itself (a color's
+/// alpha), which `stroke-opacity` multiplies.
+pub(crate) fn resolve_stroke_and_paint_opacity(
+    node: SvgNode,
+    has_bbox: bool,
+    state: &converter::State,
+    cache: &mut converter::Cache,
+) -> Option<(Stroke, Opacity)> {
     if state.parent_clip_path.is_some() {
         // A `clipPath` child cannot be stroked.
         return None;
@@ -142,7 +170,7 @@ pub(crate) fn resolve_stroke(
         context_element,
     };
 
-    Some(stroke)
+    Some((stroke, sub_opacity))
 }
 
 #[cfg(feature = "animation")]
@@ -213,7 +241,12 @@ pub(crate) fn resolve_stroke_carrier(
     if paint.is_none()
         && super::animation::collect::has_paint_animation(node, state, &["stroke-width"])
     {
-        log::warn!("Stroke width animation on an element without a stroke has no effect.");
+        super::animation::report::on_element(node, || {
+            super::animation::report::report(
+                crate::AnimationWarningCode::StrokeWidthWithoutStroke,
+                None,
+            )
+        });
     }
 
     let miterlimit = node

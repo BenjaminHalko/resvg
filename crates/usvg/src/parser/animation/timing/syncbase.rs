@@ -60,7 +60,10 @@ pub(super) fn resolve_timing_list<'a, 'input>(
             parse_begin_entry(entry).and_then(|raw| resolve_raw(&raw, all_animations, visiting));
         match resolved {
             Some(begin) => out.push(begin),
-            None => log::warn!("Unsupported animation begin/end value: '{}'.", entry),
+            None => crate::parser::animation::report::report(
+                crate::AnimationWarningCode::UnsupportedBeginEnd,
+                Some(entry),
+            ),
         }
     }
     out

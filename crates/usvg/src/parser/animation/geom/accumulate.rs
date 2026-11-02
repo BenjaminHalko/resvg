@@ -34,7 +34,10 @@ pub(super) fn bake_accumulation(
     }
 
     if multi_param {
-        log::warn!("Unsupported accumulate value; ignoring.");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::UnsupportedAccumulate,
+            None,
+        );
         return None;
     }
 

@@ -481,6 +481,11 @@ fn resolve_fill<'a>(
         return None;
     }
 
+    let opacity = match overrides.and_then(|o| o.fill_opacity) {
+        Some(value) => paint_opacity(fill.is_some(), path, |a| a.fill_paint_opacity(), value),
+        None => opacity,
+    };
+
     let rule = overrides.and_then(|o| o.fill_rule).unwrap_or(rule);
     Some((base_paint, opacity, rule, anim_color))
 }
@@ -538,6 +543,11 @@ fn resolve_stroke<'a>(
         return None;
     }
 
+    let opacity = match overrides.and_then(|o| o.stroke_opacity) {
+        Some(value) => paint_opacity(stroke.is_some(), path, |a| a.stroke_paint_opacity(), value),
+        None => opacity,
+    };
+
     let width = overrides.and_then(|o| o.stroke_width).unwrap_or(width);
     let miterlimit = overrides.and_then(|o| o.miterlimit).unwrap_or(miterlimit);
     let linecap = overrides.and_then(|o| o.linecap).unwrap_or(linecap);
@@ -547,6 +557,22 @@ fn resolve_stroke<'a>(
 
     let ts_stroke = build_stroke(width, miterlimit, linecap, linejoin, dasharray, dashoffset);
     Some((base_paint, opacity, ts_stroke, anim_color))
+}
+
+/// The opacity for an animated `fill-opacity` or `stroke-opacity`: the paint's
+/// own alpha times the sampled value. A carrier (a static `none`) has no alpha.
+#[cfg(feature = "animation")]
+fn paint_opacity(
+    has_static_paint: bool,
+    path: &usvg::Path,
+    paint_opacity: impl Fn(&usvg::NodeAnimation) -> usvg::Opacity,
+    value: f32,
+) -> usvg::Opacity {
+    let paint = path
+        .animation()
+        .filter(|_| has_static_paint)
+        .map_or(1.0, |animation| paint_opacity(animation).get());
+    usvg::Opacity::new_clamped(paint * value)
 }
 
 /// Builds a tiny-skia stroke from the resolved stroke parameters.

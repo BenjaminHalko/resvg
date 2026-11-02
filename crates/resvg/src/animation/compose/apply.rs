@@ -71,6 +71,12 @@ fn apply(
             AnimationKind::StopOpacity(_) => {
                 push_gradient(overrides, order, SampledValue::Opacity(value));
             }
+            AnimationKind::FillOpacity(_) => {
+                fold_scalar(&mut overrides.fill_opacity, value, additive);
+            }
+            AnimationKind::StrokeOpacity(_) => {
+                fold_scalar(&mut overrides.stroke_opacity, value, additive);
+            }
             _ => fold_scalar(&mut overrides.opacity, value, additive),
         },
         SampledValue::Color(color) => match kind {

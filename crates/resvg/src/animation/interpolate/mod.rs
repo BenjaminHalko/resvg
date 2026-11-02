@@ -107,7 +107,10 @@ pub(crate) fn interpolate_track_with_timing(
         AnimationKind::Motion(track) => {
             sample_motion(track, easing, progress).map(SampledValue::Motion)
         }
-        AnimationKind::Opacity(track) | AnimationKind::StopOpacity(track) => {
+        AnimationKind::Opacity(track)
+        | AnimationKind::StopOpacity(track)
+        | AnimationKind::FillOpacity(track)
+        | AnimationKind::StrokeOpacity(track) => {
             sample_opacity(track.keyframes(), easing, timing_function, progress)
                 .map(SampledValue::Opacity)
         }

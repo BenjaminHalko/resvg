@@ -55,7 +55,10 @@ pub(crate) fn extract_keyframes(css: &str) -> (Vec<KeyframesRule>, String) {
                         copy_from = end;
                     }
                     None => {
-                        log::warn!("Unterminated @keyframes block; skipped.");
+                        crate::parser::animation::report::report(
+                            crate::AnimationWarningCode::UnterminatedKeyframes,
+                            None,
+                        );
                         copy_from = len;
                         i = len;
                     }
@@ -63,7 +66,10 @@ pub(crate) fn extract_keyframes(css: &str) -> (Vec<KeyframesRule>, String) {
             }
             b'@' if matches_keyword(bytes, i + 1, b"import") => {
                 remaining.push_str(&css[copy_from..i]);
-                log::warn!("External CSS is not supported.");
+                crate::parser::animation::report::report(
+                    crate::AnimationWarningCode::ExternalCss,
+                    None,
+                );
                 i = skip_at_statement(bytes, i);
                 copy_from = i;
             }

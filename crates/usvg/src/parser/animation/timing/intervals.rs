@@ -43,10 +43,16 @@ pub(crate) fn parse_smil_timing<'a, 'input: 'a>(
     all_animations: &[(NodeId, SvgNode<'a, 'input>)],
 ) -> Timing {
     if node.has_attribute(AId::Min) {
-        log::warn!("Unsupported SMIL timing attribute: '{}'.", "min");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::UnsupportedTimingAttribute,
+            Some("min"),
+        );
     }
     if node.has_attribute(AId::Max) {
-        log::warn!("Unsupported SMIL timing attribute: '{}'.", "max");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::UnsupportedTimingAttribute,
+            Some("max"),
+        );
     }
 
     let mut visiting = vec![node];

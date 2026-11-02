@@ -134,6 +134,10 @@ pub enum AnimationKind {
     Fill(Track<svgtypes::Color>),
     /// An animated `stroke` color.
     Stroke(Track<svgtypes::Color>),
+    /// An animated `fill-opacity`.
+    FillOpacity(Track<Opacity>),
+    /// An animated `stroke-opacity`.
+    StrokeOpacity(Track<Opacity>),
     /// An animated `stroke-width` (non-negative; zero is allowed).
     StrokeWidth(Track<f32>),
     /// An animated `stroke-dashoffset`.

@@ -218,6 +218,8 @@ pub struct NodeAnimation {
     pub(crate) fill: Option<FillCarrierState>,
     pub(crate) stroke: Option<StrokeCarrierState>,
     pub(crate) image: Option<ImageCarrierState>,
+    pub(crate) fill_paint_opacity: Opacity,
+    pub(crate) stroke_paint_opacity: Opacity,
 }
 
 impl NodeAnimation {
@@ -237,6 +239,8 @@ impl NodeAnimation {
             fill,
             stroke,
             image,
+            fill_paint_opacity: Opacity::ONE,
+            stroke_paint_opacity: Opacity::ONE,
         }
     }
 
@@ -268,5 +272,17 @@ impl NodeAnimation {
     /// The image carrier state, if any.
     pub fn image(&self) -> Option<&ImageCarrierState> {
         self.image.as_ref()
+    }
+
+    /// The opacity the fill paint carries itself (a color's alpha), which an
+    /// animated `fill-opacity` multiplies.
+    pub fn fill_paint_opacity(&self) -> Opacity {
+        self.fill_paint_opacity
+    }
+
+    /// The opacity the stroke paint carries itself (a color's alpha), which an
+    /// animated `stroke-opacity` multiplies.
+    pub fn stroke_paint_opacity(&self) -> Opacity {
+        self.stroke_paint_opacity
     }
 }

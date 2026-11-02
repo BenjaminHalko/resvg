@@ -38,6 +38,42 @@ pub(super) fn parse_opacity_attribute(context: AttributeContext<'_>) -> Option<S
     })
 }
 
+pub(super) fn parse_paint_opacity_attribute(
+    context: AttributeContext<'_>,
+    stroke: bool,
+) -> Option<SmilValues> {
+    let AttributeContext {
+        forms,
+        key_times,
+        additive,
+        accumulate,
+        calc_mode,
+        base_value,
+    } = context;
+    let (keyframes, additive) = build_forms(
+        forms,
+        key_times,
+        additive,
+        false,
+        true,
+        Some(Opacity::ZERO),
+        base_value.opacity(),
+        |s| warned(parse_opacity(s), s),
+        |a, b| Opacity::new_clamped(a.get() + b.get()),
+    )?;
+    let track = Track::new(keyframes);
+    Some(SmilValues {
+        kind: if stroke {
+            AnimationKind::StrokeOpacity(track)
+        } else {
+            AnimationKind::FillOpacity(track)
+        },
+        additive,
+        accumulate,
+        calc_mode,
+    })
+}
+
 pub(super) fn parse_stop_opacity_attribute(context: AttributeContext<'_>) -> Option<SmilValues> {
     let AttributeContext {
         forms,

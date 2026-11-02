@@ -175,8 +175,21 @@ impl crate::Tree {
 
     /// Parses `Tree` from `roxmltree::Document`.
     pub fn from_xmltree(doc: &roxmltree::Document, opt: &Options) -> Result<Self, Error> {
-        let doc = svgtree::Document::parse_tree(doc, opt.style_sheet.as_deref())?;
-        self::converter::convert_doc(&doc, opt)
+        #[cfg(feature = "animation")]
+        {
+            let (tree, warnings) = animation::report::collect(|| {
+                let doc = svgtree::Document::parse_tree(doc, opt.style_sheet.as_deref())?;
+                self::converter::convert_doc(&doc, opt)
+            });
+            let mut tree = tree?;
+            tree.animation_warnings = warnings;
+            Ok(tree)
+        }
+        #[cfg(not(feature = "animation"))]
+        {
+            let doc = svgtree::Document::parse_tree(doc, opt.style_sheet.as_deref())?;
+            self::converter::convert_doc(&doc, opt)
+        }
     }
 }
 

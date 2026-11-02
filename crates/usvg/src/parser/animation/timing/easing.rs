@@ -25,7 +25,10 @@ pub(crate) fn parse_easing<'a, 'input: 'a>(
         Some(raw) => match parse_key_times(raw) {
             Some(times) if valid_key_times(&times, calc_mode, values_count) => Some(times),
             _ => {
-                log::warn!("Invalid animation timing: '{}'.", raw);
+                crate::parser::animation::report::report(
+                    crate::AnimationWarningCode::InvalidTiming,
+                    Some(raw),
+                );
                 return None;
             }
         },
@@ -43,7 +46,10 @@ pub(crate) fn parse_easing<'a, 'input: 'a>(
                 Some(splines)
             }
             _ => {
-                log::warn!("Invalid animation timing: '{}'.", raw);
+                crate::parser::animation::report::report(
+                    crate::AnimationWarningCode::InvalidTiming,
+                    Some(raw),
+                );
                 return None;
             }
         }

@@ -52,6 +52,8 @@ pub(crate) struct SampledOverrides {
     pub(crate) opacity: Option<f32>,
     pub(crate) fill: Option<Color>,
     pub(crate) stroke: Option<Color>,
+    pub(crate) fill_opacity: Option<f32>,
+    pub(crate) stroke_opacity: Option<f32>,
     pub(crate) stroke_width: Option<f32>,
     pub(crate) dashoffset: Option<f32>,
     pub(crate) dasharray: Option<Vec<f32>>,

@@ -16,6 +16,8 @@ mod css_path;
 mod geometry_units;
 #[path = "animation/malformed_path.rs"]
 mod malformed_path;
+#[path = "animation/warnings.rs"]
+mod warnings;
 
 const NS: &str = "http://www.w3.org/2000/svg";
 const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9JTxAAAAAASUVORK5CYII=";

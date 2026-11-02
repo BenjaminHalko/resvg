@@ -70,7 +70,10 @@ pub(crate) fn build_css_animations<'a, 'input>(
             .iter()
             .find(|rule| rule.name.as_str() == name)
         else {
-            log::warn!("Unknown keyframes name: '{}'.", name);
+            crate::parser::animation::report::report(
+                crate::AnimationWarningCode::UnknownKeyframes,
+                Some(name),
+            );
             continue;
         };
 
@@ -105,6 +108,8 @@ enum CssProperty {
     Opacity,
     Fill,
     Stroke,
+    FillOpacity,
+    StrokeOpacity,
     StrokeWidth,
     StrokeDashoffset,
     StopColor,
@@ -125,20 +130,29 @@ fn build_property_animation(
 ) -> Option<Arc<Animation>> {
     let property = property.trim();
     if property.starts_with("--") {
-        log::warn!("CSS variables are not supported.");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::CssVariable,
+            Some(property),
+        );
         return None;
     }
 
     let Some(css_property) =
         classify_property(property, is_stop, node.tag_name() == Some(EId::Path))
     else {
-        log::warn!("Unsupported CSS property in keyframes: '{}'.", property);
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::UnsupportedCssProperty,
+            Some(property),
+        );
         return None;
     };
 
     let entries = property_entries(rule, property);
     if entries.iter().any(|(_, value, _)| value.contains("var(")) {
-        log::warn!("CSS variables are not supported.");
+        crate::parser::animation::report::report(
+            crate::AnimationWarningCode::CssVariable,
+            Some(property),
+        );
         return None;
     }
 
@@ -154,6 +168,12 @@ fn build_property_animation(
         CssProperty::Opacity => AnimationKind::Opacity(build_track(&entries, parse_css_opacity)?),
         CssProperty::Fill => AnimationKind::Fill(build_track(&entries, parse_css_color)?),
         CssProperty::Stroke => AnimationKind::Stroke(build_track(&entries, parse_css_color)?),
+        CssProperty::FillOpacity => {
+            AnimationKind::FillOpacity(build_track(&entries, parse_css_opacity)?)
+        }
+        CssProperty::StrokeOpacity => {
+            AnimationKind::StrokeOpacity(build_track(&entries, parse_css_opacity)?)
+        }
         CssProperty::StrokeWidth => AnimationKind::StrokeWidth(build_track(&entries, |value| {
             parse_css_stroke_width(value, node, state)
         })?),
@@ -202,6 +222,10 @@ fn classify_property(property: &str, is_stop: bool, is_path: bool) -> Option<Css
         Some(CssProperty::Fill)
     } else if property.eq_ignore_ascii_case("stroke") {
         Some(CssProperty::Stroke)
+    } else if property.eq_ignore_ascii_case("fill-opacity") {
+        Some(CssProperty::FillOpacity)
+    } else if property.eq_ignore_ascii_case("stroke-opacity") {
+        Some(CssProperty::StrokeOpacity)
     } else if property.eq_ignore_ascii_case("stroke-width") {
         Some(CssProperty::StrokeWidth)
     } else if property.eq_ignore_ascii_case("stroke-dashoffset") {
