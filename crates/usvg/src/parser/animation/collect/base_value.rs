@@ -19,6 +19,13 @@ pub(super) fn base_value(node: SvgNode, name: &str, state: &converter::State) ->
                 .and_then(|attribute| node.find_attribute(attribute))
                 .unwrap_or(Opacity::ONE),
         ),
+        "stop-opacity" => {
+            BaseValue::Opacity(node.attribute(AId::StopOpacity).unwrap_or(Opacity::ONE))
+        }
+        "stop-color" => node
+            .attribute::<&str>(AId::StopColor)
+            .and_then(|value| svgtypes::Color::from_str(value).ok())
+            .map_or(BaseValue::Color(svgtypes::Color::black()), BaseValue::Color),
         "fill" | "stroke" => AId::from_str(name)
             .and_then(|attribute| node.find_attribute::<&str>(attribute))
             .and_then(|value| svgtypes::Color::from_str(value).ok())

@@ -137,3 +137,12 @@ fn fill_and_stroke_opacity_are_typed_tracks_not_losses() {
         .collect::<Vec<_>>();
     assert_eq!(kinds, ["fill-opacity", "stroke-opacity"]);
 }
+
+#[test]
+fn a_stop_colour_animated_to_a_value_starts_from_its_own() {
+    let tree = parse(
+        "<linearGradient id='g'><stop offset='0' stop-color='#000'><animate attributeName='stop-color' to='#fff' dur='1s'/></stop><stop offset='1' stop-color='#f00'/></linearGradient><rect width='5' height='5' fill='url(#g)'/>",
+    );
+
+    assert!(tree.linear_gradients()[0].animation().is_some());
+}
