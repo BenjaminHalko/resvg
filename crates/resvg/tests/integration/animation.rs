@@ -777,3 +777,21 @@ fn a_motion_moves_in_the_parents_space_outside_the_transform() {
         Some((40, 0, 49, 9))
     );
 }
+
+#[test]
+fn a_discrete_motion_holds_each_key_point() {
+    // keyPoints 0, 0.5, 1 at 0, 1 and 2 s, discrete: at 0.5 s it's still at the start.
+    let svg = r#"<svg width="120" height="20" viewBox="0 0 120 20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="10" height="10" fill="red">
+            <animateMotion path="M0 0 H100" keyPoints="0;0.5;1" keyTimes="0;0.5;1" calcMode="discrete" dur="2s" fill="freeze"/>
+        </rect>
+    </svg>"#;
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 0.5)),
+        Some((0, 0, 9, 9))
+    );
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 1.5)),
+        Some((50, 0, 59, 9))
+    );
+}

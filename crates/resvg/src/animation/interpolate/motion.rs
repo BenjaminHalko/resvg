@@ -147,6 +147,8 @@ fn motion_fraction(track: &MotionTrack, easing: &Easing, progress: f32) -> f32 {
                     .and_then(|splines| splines.get(lo))
                     .map(|spline| key_spline(*spline, local))
                     .unwrap_or(local),
+                // (Discrete: each key point held until the next one's time.)
+                CalcMode::Discrete => 0.0,
                 _ => local,
             };
             lerp(key_points[lo].get(), key_points[hi].get(), eased).clamp(0.0, 1.0)
