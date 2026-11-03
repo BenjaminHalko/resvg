@@ -702,3 +702,32 @@ fn resolve_fr_from_referenced_radial_gradient() {
 
     assert_eq!(rg.fr().get(), 25.0);
 }
+
+#[test]
+fn a_variable_instance_draws_a_glyph_of_no_points_and_padding_as_nothing() {
+    // Inter's variable font cut to a few letters, its `a` made a glyph of no
+    // contours with its bounding box kept and the rest of its bytes zero.
+    // read-fonts before 0.42.1 indexed past such a glyph's flags and panicked
+    // whenever it was drawn from an instance of the font.
+    let mut opts = usvg::Options::default();
+    opts.fontdb_mut()
+        .load_font_file(
+            env!("CARGO_MANIFEST_DIR").to_string() + "/tests/files/inter-variable-empty-a.ttf",
+        )
+        .unwrap();
+    let family = opts.fontdb.faces().next().unwrap().families[0].0.clone();
+    for weight in [100, 400, 700, 900] {
+        let svg = format!(
+            "<svg width='200' height='50' xmlns='http://www.w3.org/2000/svg'>
+                <text x='10' y='40' font-family='{family}' font-size='30'
+                    style='font-variation-settings: \"wght\" {weight}'>aH</text>
+            </svg>"
+        );
+        let tree = usvg::Tree::from_str(&svg, &opts).unwrap();
+        let usvg::Node::Text(text) = &tree.root().children()[0] else {
+            panic!("no text at weight {weight}");
+        };
+        // `H` draws; `a` draws nothing.
+        assert_eq!(text.flattened().children().len(), 1, "at weight {weight}");
+    }
+}
