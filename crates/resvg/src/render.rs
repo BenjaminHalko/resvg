@@ -132,6 +132,59 @@ fn render_group(
         return Some(());
     }
 
+    let rest = if group.filters().is_empty() {
+        tiny_skia::Transform::identity()
+    } else {
+        let sx = transform.sx.hypot(transform.ky);
+        let sy = transform.kx.hypot(transform.sy);
+        tiny_skia::Transform::from_row(
+            transform.sx / sx,
+            transform.ky / sx,
+            transform.kx / sy,
+            transform.sy / sy,
+            0.0,
+            0.0,
+        )
+    };
+    let inv_rest = rest.invert()?;
+
+    let max_bbox = ctx.max_bbox.to_rect().transform(inv_rest)?.round_out()?;
+    let layer_ctx = Context {
+        max_bbox,
+        #[cfg(feature = "animation")]
+        time: ctx.time,
+    };
+    let (layer, ibbox) = render_layer(group, &layer_ctx, inv_rest.pre_concat(transform))?;
+
+    #[cfg(feature = "animation")]
+    let opacity = sampled_opacity.unwrap_or_else(|| group.opacity().get());
+    #[cfg(not(feature = "animation"))]
+    let opacity = group.opacity().get();
+
+    let paint = tiny_skia::Paint {
+        shader: tiny_skia::Pattern::new(
+            layer.as_ref(),
+            tiny_skia::SpreadMode::Pad,
+            tiny_skia::FilterQuality::Bilinear,
+            opacity,
+            tiny_skia::Transform::from_translate(ibbox.x() as f32, ibbox.y() as f32),
+        ),
+        blend_mode: convert_blend_mode(group.blend_mode()),
+        anti_alias: true,
+        ..tiny_skia::Paint::default()
+    };
+    let path = tiny_skia::PathBuilder::from_rect(ibbox.to_rect());
+    pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, rest, None);
+
+    Some(())
+}
+
+/// Renders an isolated group into a new layer, returning it and its position.
+fn render_layer(
+    group: &usvg::Group,
+    ctx: &Context,
+    transform: tiny_skia::Transform,
+) -> Option<(tiny_skia::Pixmap, tiny_skia::IntRect)> {
     let bbox = group.layer_bounding_box().transform(transform)?;
 
     #[cfg(feature = "animation")]
@@ -216,27 +269,7 @@ fn render_group(
         crate::mask::apply(mask, ctx, transform, &mut sub_pixmap);
     }
 
-    #[cfg(feature = "animation")]
-    let opacity = sampled_opacity.unwrap_or_else(|| group.opacity().get());
-    #[cfg(not(feature = "animation"))]
-    let opacity = group.opacity().get();
-
-    let paint = tiny_skia::PixmapPaint {
-        opacity,
-        blend_mode: convert_blend_mode(group.blend_mode()),
-        quality: tiny_skia::FilterQuality::Nearest,
-    };
-
-    pixmap.draw_pixmap(
-        ibbox.x(),
-        ibbox.y(),
-        sub_pixmap.as_ref(),
-        &paint,
-        tiny_skia::Transform::identity(),
-        None,
-    );
-
-    Some(())
+    Some((sub_pixmap, ibbox))
 }
 
 #[cfg(feature = "animation")]
@@ -392,6 +425,7 @@ pub fn convert_blend_mode(mode: usvg::BlendMode) -> tiny_skia::BlendMode {
         usvg::BlendMode::Saturation => tiny_skia::BlendMode::Saturation,
         usvg::BlendMode::Color => tiny_skia::BlendMode::Color,
         usvg::BlendMode::Luminosity => tiny_skia::BlendMode::Luminosity,
+        usvg::BlendMode::PlusLighter => tiny_skia::BlendMode::Plus,
     }
 }
 

@@ -12,7 +12,7 @@ use svgtypes::{AspectRatio, Length, LengthUnit as Unit};
 
 use crate::{
     ApproxZeroUlps, Color, Group, Node, NonEmptyString, NonZeroF32, NonZeroRect, Opacity, Size,
-    Units,
+    Transform, Units,
     filter::{self, *},
 };
 
@@ -628,6 +628,7 @@ fn convert_composite(fe: SvgNode, primitives: &[Primitive]) -> Kind {
         "out" => CompositeOperator::Out,
         "atop" => CompositeOperator::Atop,
         "xor" => CompositeOperator::Xor,
+        "lighter" => CompositeOperator::Lighter,
         "arithmetic" => CompositeOperator::Arithmetic {
             k1: fe.attribute(AId::K1).unwrap_or(0.0),
             k2: fe.attribute(AId::K2).unwrap_or(0.0),
@@ -837,6 +838,13 @@ fn convert_image_inner(
         super::converter::convert_element(node, &state, cache, &mut root);
         return if root.has_children() {
             root.calculate_bounding_boxes();
+            super::paint_server::update_paint_servers(
+                &mut root,
+                Transform::default(),
+                None,
+                None,
+                cache,
+            );
             // Transfer node id from group's child to the group itself if needed.
             if let Some(Node::Group(g)) = root.children.first_mut() {
                 if let Some(child2) = g.children.first_mut() {

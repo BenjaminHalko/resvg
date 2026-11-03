@@ -73,7 +73,8 @@ fn convert_linear(
     }
 
     let units = convert_units(node, AId::GradientUnits, Units::ObjectBoundingBox);
-    let transform = node.resolve_transform(AId::GradientTransform, state);
+    let transform =
+        resolve_attr(node, AId::GradientTransform).resolve_transform(AId::GradientTransform, state);
 
     let gradient = LinearGradient {
         x1: resolve_number(node, AId::X1, units, state, Length::zero()),
@@ -153,7 +154,8 @@ fn convert_radial(
     );
     let fx = resolve_number(node, AId::Fx, units, state, Length::new_number(cx as f64));
     let fy = resolve_number(node, AId::Fy, units, state, Length::new_number(cy as f64));
-    let transform = node.resolve_transform(AId::GradientTransform, state);
+    let transform =
+        resolve_attr(node, AId::GradientTransform).resolve_transform(AId::GradientTransform, state);
 
     let gradient = RadialGradient {
         cx,
@@ -200,7 +202,8 @@ fn convert_pattern(
     let units = convert_units(node, AId::PatternUnits, Units::ObjectBoundingBox);
     let content_units = convert_units(node, AId::PatternContentUnits, Units::UserSpaceOnUse);
 
-    let transform = node.resolve_transform(AId::PatternTransform, state);
+    let transform =
+        resolve_attr(node, AId::PatternTransform).resolve_transform(AId::PatternTransform, state);
 
     let rect = NonZeroRect::from_xywh(
         resolve_number(node, AId::X, units, state, Length::zero()),
@@ -250,6 +253,7 @@ fn convert_pattern(
     }
 
     patt.root.calculate_bounding_boxes();
+    update_paint_servers(&mut patt.root, Transform::default(), None, None, cache);
 
     Some(ServerOrColor::Server(Paint::Pattern(Arc::new(patt))))
 }
@@ -627,47 +631,6 @@ fn node_to_user_coordinates(
 ) {
     match node {
         Node::Group(g) => {
-            // No need to check clip paths, because they cannot have paint servers.
-            if let Some(mask) = &mut g.mask {
-                if let Some(mask) = Arc::get_mut(mask) {
-                    update_paint_servers(
-                        &mut mask.root,
-                        context_transform,
-                        context_bbox,
-                        None,
-                        cache,
-                    );
-
-                    if let Some(sub_mask) = &mut mask.mask {
-                        if let Some(sub_mask) = Arc::get_mut(sub_mask) {
-                            update_paint_servers(
-                                &mut sub_mask.root,
-                                context_transform,
-                                context_bbox,
-                                None,
-                                cache,
-                            );
-                        }
-                    }
-                }
-            }
-
-            for filter in &mut g.filters {
-                if let Some(filter) = Arc::get_mut(filter) {
-                    for primitive in &mut filter.primitives {
-                        if let filter::Kind::Image(image) = &mut primitive.kind {
-                            update_paint_servers(
-                                &mut image.root,
-                                context_transform,
-                                context_bbox,
-                                None,
-                                cache,
-                            );
-                        }
-                    }
-                }
-            }
-
             update_paint_servers(g, context_transform, context_bbox, text_bbox, cache);
         }
         Node::Path(path) => {
@@ -951,12 +914,6 @@ pub(crate) fn process_paint(
 
         if paint.to_user_coordinates(bbox, cache).is_none() {
             return false;
-        }
-    }
-
-    if let Paint::Pattern(patt) = paint {
-        if let Some(patt) = Arc::get_mut(patt) {
-            update_paint_servers(&mut patt.root, Transform::default(), None, None, cache);
         }
     }
 
