@@ -272,15 +272,23 @@ fn render_layer(
     Some((sub_pixmap, ibbox))
 }
 
+/// Whether anything a group draws animates, its clip paths' contents among them:
+/// a static layer bounding box (cut to the static clip since 0.49) can't hold it.
 #[cfg(feature = "animation")]
 fn has_animated_content(group: &usvg::Group) -> bool {
     group.animation().is_some()
+        || group.clip_path().is_some_and(clip_animates)
         || group.children().iter().any(|node| match node {
             usvg::Node::Group(group) => has_animated_content(group),
             usvg::Node::Path(path) => path.animation().is_some(),
             usvg::Node::Text(text) => has_animated_content(text.flattened()),
             usvg::Node::Image(_) => false,
         })
+}
+
+#[cfg(feature = "animation")]
+fn clip_animates(clip: &usvg::ClipPath) -> bool {
+    has_animated_content(clip.root()) || clip.clip_path().is_some_and(clip_animates)
 }
 
 /// Samples the root `viewBox` animation at `time`, returning the animated root
