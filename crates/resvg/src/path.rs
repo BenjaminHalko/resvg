@@ -51,8 +51,7 @@ pub fn render(
 
     #[cfg(feature = "animation")]
     let transform = overrides
-        .and_then(|o| o.transform)
-        .map(|matrix| transform.pre_concat(matrix))
+        .map(|o| transform.pre_concat(o.transform_over(tiny_skia::Transform::identity())))
         .unwrap_or(transform);
 
     if path.paint_order() == usvg::PaintOrder::FillAndStroke {

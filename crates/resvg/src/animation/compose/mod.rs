@@ -52,6 +52,8 @@ pub(crate) struct SampledOverrides {
     /// Whether a `replace` transform contributed: `transform` then stands alone,
     /// else it goes on top of the static transform.
     pub(crate) transform_replaced: bool,
+    /// The sampled `animateMotion`, applied outside the transform.
+    pub(crate) motion: Option<Transform>,
     pub(crate) opacity: Option<f32>,
     pub(crate) fill: Option<Color>,
     pub(crate) stroke: Option<Color>,
@@ -76,10 +78,14 @@ impl SampledOverrides {
     /// The node's transform: the static one `base` with the sampled transforms
     /// over it (`additive="sum"`, `animateMotion`), or a sampled `replace` alone.
     pub(crate) fn transform_over(&self, base: Transform) -> Transform {
-        match self.transform {
+        let own = match self.transform {
             Some(sampled) if self.transform_replaced => sampled,
             Some(sampled) => base.pre_concat(sampled),
             None => base,
+        };
+        match self.motion {
+            Some(motion) => motion.pre_concat(own),
+            None => own,
         }
     }
 }
@@ -435,7 +441,7 @@ mod tests {
         let overrides = sample_overrides(&node(vec![anim]), 0.5);
         let expected =
             Transform::from_translate(50.0, 50.0).pre_concat(Transform::from_rotate(45.0));
-        approx_transform(overrides.transform.unwrap(), expected);
+        approx_transform(overrides.motion.unwrap(), expected);
     }
 
     #[test]

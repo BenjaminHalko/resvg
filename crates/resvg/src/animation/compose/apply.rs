@@ -66,9 +66,10 @@ fn apply(
             fold_transform(&mut overrides.transform, matrix, additive);
         }
         SampledValue::Motion(matrix) => {
-            // Motion supplements the transform sandwich by post-multiplication.
-            let base = overrides.transform.unwrap_or_else(Transform::identity);
-            overrides.transform = Some(base.pre_concat(matrix));
+            // Motion goes outside the transform sandwich: it moves the element in its
+            // parent's space, as browsers (and CSS's `offset-path`) place it.
+            let base = overrides.motion.unwrap_or_else(Transform::identity);
+            overrides.motion = Some(base.pre_concat(matrix));
         }
         SampledValue::Opacity(value) => match kind {
             AnimationKind::StopOpacity(_) => {

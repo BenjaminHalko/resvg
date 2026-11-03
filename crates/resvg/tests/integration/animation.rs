@@ -763,3 +763,17 @@ fn a_replacing_transform_stands_alone() {
         Some((0, 10, 9, 19))
     );
 }
+
+#[test]
+fn a_motion_moves_in_the_parents_space_outside_the_transform() {
+    // A scale(2) element moved along M0 0 H40: it ends at x = 40, not 80.
+    let svg = r#"<svg width="100" height="20" viewBox="0 0 100 20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="5" height="5" fill="red" transform="scale(2)">
+            <animateMotion path="M0 0 H40" dur="2s" fill="freeze"/>
+        </rect>
+    </svg>"#;
+    assert_eq!(
+        nonzero_bbox(&render_at_pixmap(svg, 2.0)),
+        Some((40, 0, 49, 9))
+    );
+}
