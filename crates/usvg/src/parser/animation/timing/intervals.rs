@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use super::clock::parse_clock_value;
-use super::syncbase::resolve_timing_list;
-use crate::parser::svgtree::{AId, NodeId, SvgNode};
+use super::syncbase::{Animations, resolve_timing_list};
+use crate::parser::svgtree::{AId, SvgNode};
 use crate::tree::animation::{Direction, Interval, TimedInterval, Timing};
 
 #[derive(Clone, Copy, Debug)]
@@ -40,7 +40,7 @@ pub(super) enum Admission {
 /// Parses SMIL timing and bakes its resolved behavior into a canonical timeline.
 pub(crate) fn parse_smil_timing<'a, 'input: 'a>(
     node: SvgNode<'a, 'input>,
-    all_animations: &[(NodeId, SvgNode<'a, 'input>)],
+    all_animations: &Animations<'a, 'input>,
 ) -> Timing {
     if node.has_attribute(AId::Min) {
         crate::parser::animation::report::report(

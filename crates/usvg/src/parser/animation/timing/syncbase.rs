@@ -1,9 +1,48 @@
 // Copyright 2019 the Resvg Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use super::intervals::{Begin, active_duration, parse_dur, parse_repeat_count, parse_repeat_dur};
 use super::syntax::parse_begin_entry;
 use crate::parser::svgtree::{AId, NodeId, SvgNode};
+
+/// The most syncbase references deep a begin or an end is resolved through: past it, it's
+/// unresolved (a chain written backwards, the first resolved needing all the rest).
+const MOST_SYNCBASE_DEPTH: usize = 1024;
+
+/// A document's animation elements in order, found by their ids, and the syncbase instants
+/// resolved from them so far: each element's begin and end is resolved once, however many
+/// others name it.
+pub(crate) struct Animations<'a, 'input: 'a> {
+    list: Vec<(NodeId, SvgNode<'a, 'input>)>,
+    /// Each id's first element, by its place in `list`.
+    by_id: HashMap<&'a str, usize>,
+    resolved: RefCell<HashMap<(usize, SyncEdge), Option<f32>>>,
+}
+
+impl<'a, 'input: 'a> Animations<'a, 'input> {
+    pub(crate) fn new(list: Vec<(NodeId, SvgNode<'a, 'input>)>) -> Self {
+        let mut by_id = HashMap::new();
+        for (index, (_, node)) in list.iter().enumerate() {
+            by_id.entry(node.element_id()).or_insert(index);
+        }
+        Animations {
+            list,
+            by_id,
+            resolved: RefCell::new(HashMap::new()),
+        }
+    }
+}
+
+impl<'a, 'input: 'a> std::ops::Deref for Animations<'a, 'input> {
+    type Target = [(NodeId, SvgNode<'a, 'input>)];
+
+    fn deref(&self) -> &Self::Target {
+        &self.list
+    }
+}
 
 /// A partially-parsed `begin`/`end` value, before syncbase resolution.
 #[derive(Clone, Debug)]
@@ -21,7 +60,7 @@ pub(crate) enum RawBegin {
 }
 
 /// The referenced timing edge of a syncbase value.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SyncEdge {
     /// The `begin` edge.
     Begin,
@@ -38,7 +77,7 @@ pub(super) fn resolve_timing_list<'a, 'input>(
     node: SvgNode<'a, 'input>,
     aid: AId,
     default_zero: bool,
-    all_animations: &[(NodeId, SvgNode<'a, 'input>)],
+    all_animations: &Animations<'a, 'input>,
     visiting: &mut Vec<SvgNode<'a, 'input>>,
 ) -> Vec<Begin> {
     let Some(value) = node.attribute::<&str>(aid) else {
@@ -73,7 +112,7 @@ pub(super) fn resolve_timing_list<'a, 'input>(
 /// value cannot be statically resolved.
 fn resolve_raw<'a, 'input>(
     raw: &RawBegin,
-    all_animations: &[(NodeId, SvgNode<'a, 'input>)],
+    all_animations: &Animations<'a, 'input>,
     visiting: &mut Vec<SvgNode<'a, 'input>>,
 ) -> Option<Begin> {
     match raw {
@@ -89,16 +128,22 @@ fn resolve_raw<'a, 'input>(
 ///
 /// `x.begin` resolves when `x` has a single static begin. `x.end` resolves only
 /// when `x` is statically determinate: a single begin, no explicit end list and
-/// a finite active duration. Cyclic references return `None`.
+/// a finite active duration. Cyclic references, and those past
+/// `MOST_SYNCBASE_DEPTH`, return `None`. Each is resolved once and kept.
 fn resolve_syncbase<'a, 'input>(
     id: &str,
     edge: SyncEdge,
     offset: f32,
-    all_animations: &[(NodeId, SvgNode<'a, 'input>)],
+    all_animations: &Animations<'a, 'input>,
     visiting: &mut Vec<SvgNode<'a, 'input>>,
 ) -> Option<f32> {
-    let target = find_animation_node(id, all_animations)?;
-    if visiting.contains(&target) {
+    let index = *all_animations.by_id.get(id)?;
+    let key = (index, edge);
+    if let Some(known) = all_animations.resolved.borrow().get(&key) {
+        return known.map(|seconds| seconds + offset);
+    }
+    let target = all_animations.list[index].1;
+    if visiting.contains(&target) || visiting.len() >= MOST_SYNCBASE_DEPTH {
         return None;
     }
 
@@ -108,26 +153,16 @@ fn resolve_syncbase<'a, 'input>(
         SyncEdge::End => resolve_end_instant(target, all_animations, visiting),
     };
     visiting.pop();
+    all_animations.resolved.borrow_mut().insert(key, base);
 
     base.map(|seconds| seconds + offset)
-}
-
-/// Finds the animation element with the given `id`.
-fn find_animation_node<'a, 'input>(
-    id: &str,
-    all_animations: &[(NodeId, SvgNode<'a, 'input>)],
-) -> Option<SvgNode<'a, 'input>> {
-    all_animations
-        .iter()
-        .find(|(_, node)| node.element_id() == id)
-        .map(|(_, node)| *node)
 }
 
 /// Resolves a node's begins, returning the instant only when exactly one static
 /// begin exists.
 fn resolve_single_begin<'a, 'input>(
     node: SvgNode<'a, 'input>,
-    all_animations: &[(NodeId, SvgNode<'a, 'input>)],
+    all_animations: &Animations<'a, 'input>,
     visiting: &mut Vec<SvgNode<'a, 'input>>,
 ) -> Option<f32> {
     let mut instants = Vec::new();
@@ -142,7 +177,7 @@ fn resolve_single_begin<'a, 'input>(
 /// Resolves a node's end instant when it is statically determinate.
 fn resolve_end_instant<'a, 'input>(
     node: SvgNode<'a, 'input>,
-    all_animations: &[(NodeId, SvgNode<'a, 'input>)],
+    all_animations: &Animations<'a, 'input>,
     visiting: &mut Vec<SvgNode<'a, 'input>>,
 ) -> Option<f32> {
     if has_end_entries(node) {

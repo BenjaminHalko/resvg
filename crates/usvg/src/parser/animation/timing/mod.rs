@@ -9,10 +9,10 @@ mod syntax;
 
 pub(crate) use easing::parse_easing;
 pub(crate) use intervals::parse_smil_timing;
-pub(crate) use syncbase::{RawBegin, SyncEdge};
+pub(crate) use syncbase::{Animations, RawBegin, SyncEdge};
 
 #[cfg(test)]
-use crate::parser::svgtree::{NodeId, SvgNode};
+use crate::parser::svgtree::NodeId;
 #[cfg(test)]
 use crate::tree::animation::{CalcMode, Easing, Timing};
 #[cfg(test)]
@@ -64,12 +64,13 @@ mod tests {
     fn timing_of(svg: &str, id: &str) -> Timing {
         let xml = roxmltree::Document::parse(svg).unwrap();
         let doc = Document::parse_tree(&xml, None).unwrap();
-        let all: Vec<(NodeId, SvgNode)> = doc
-            .descendants()
-            .filter(|node| node.tag_name().map(|t| t.is_animation()).unwrap_or(false))
-            .enumerate()
-            .map(|(i, node)| (NodeId::from(i), node))
-            .collect();
+        let all = Animations::new(
+            doc.descendants()
+                .filter(|node| node.tag_name().map(|t| t.is_animation()).unwrap_or(false))
+                .enumerate()
+                .map(|(i, node)| (NodeId::from(i), node))
+                .collect(),
+        );
         let node = all
             .iter()
             .find(|(_, node)| node.element_id() == id)

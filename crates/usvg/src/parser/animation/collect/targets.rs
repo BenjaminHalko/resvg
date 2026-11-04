@@ -6,6 +6,7 @@ use std::sync::Arc;
 use svgtypes::Length;
 
 use super::super::css;
+use super::super::timing::Animations;
 use super::parsing::parse_animation;
 use super::warnings::has_remote_text_animation;
 use crate::parser::converter;
@@ -31,7 +32,7 @@ pub(crate) fn collect_node_animations(
 
 pub(crate) fn collect_animations(
     node: SvgNode,
-    all_animations: &[(NodeId, SvgNode)],
+    all_animations: &Animations,
     state: &converter::State,
     cache: &mut converter::Cache,
 ) -> Vec<Arc<Animation>> {

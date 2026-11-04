@@ -16,6 +16,8 @@ mod css_path;
 mod geometry_units;
 #[path = "animation/malformed_path.rs"]
 mod malformed_path;
+#[path = "animation/robustness.rs"]
+mod robustness;
 #[path = "animation/warnings.rs"]
 mod warnings;
 

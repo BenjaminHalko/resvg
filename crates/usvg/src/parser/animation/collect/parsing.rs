@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use super::super::motion::parse_animate_motion;
-use super::super::timing::{parse_easing, parse_smil_timing};
+use super::super::timing::{Animations, parse_easing, parse_smil_timing};
 use super::super::values::{parse_smil_transform_values, parse_smil_values};
 use super::base_value::base_value;
 use super::geometry::{is_shape_geometry, parse_geometry_animation};
@@ -15,13 +15,13 @@ use super::resolved::{
 use super::targets::map_target_kind;
 use crate::parser::animation::values::SmilTransformType;
 use crate::parser::converter;
-use crate::parser::svgtree::{AId, EId, NodeId, SvgNode};
+use crate::parser::svgtree::{AId, EId, SvgNode};
 use crate::tree::animation::{Accumulate, Additive, Animation, AnimationSource, CalcMode, Easing};
 
 pub(super) fn parse_animation(
     target: SvgNode,
     node: SvgNode,
-    all_animations: &[(NodeId, SvgNode)],
+    all_animations: &Animations,
     state: &converter::State,
     _cache: &mut converter::Cache,
 ) -> Option<Arc<Animation>> {

@@ -44,7 +44,7 @@ pub struct State<'a> {
     /// Width and height can be set independently.
     pub(crate) use_size: (Option<f32>, Option<f32>),
     #[cfg(feature = "animation")]
-    pub(crate) all_animations: &'a [(svgtree::NodeId, SvgNode<'a, 'a>)],
+    pub(crate) all_animations: &'a super::animation::timing::Animations<'a, 'a>,
     pub(crate) opt: &'a Options<'a>,
 }
 
@@ -414,12 +414,14 @@ impl SvgColorExt for svgtypes::Color {
 pub(crate) fn convert_doc(svg_doc: &svgtree::Document, opt: &Options) -> Result<Tree, Error> {
     let svg = svg_doc.root_element();
     #[cfg(feature = "animation")]
-    let all_animations = svg_doc
-        .descendants()
-        .filter(|node| node.tag_name().is_some_and(|tag| tag.is_animation()))
-        .enumerate()
-        .map(|(index, node)| (svgtree::NodeId::from(index), node))
-        .collect::<Vec<_>>();
+    let all_animations = super::animation::timing::Animations::new(
+        svg_doc
+            .descendants()
+            .filter(|node| node.tag_name().is_some_and(|tag| tag.is_animation()))
+            .enumerate()
+            .map(|(index, node)| (svgtree::NodeId::from(index), node))
+            .collect(),
+    );
     let (size, restore_viewbox) = resolve_svg_size(
         &svg,
         opt,
@@ -589,7 +591,7 @@ fn background_path(background_color: svgtypes::Color, area: Rect) -> Option<Path
 fn resolve_svg_size(
     svg: &SvgNode,
     opt: &Options,
-    #[cfg(feature = "animation")] all_animations: &[(svgtree::NodeId, SvgNode)],
+    #[cfg(feature = "animation")] all_animations: &super::animation::timing::Animations,
 ) -> (Result<Size, Error>, bool) {
     let mut state = State {
         parent_clip_path: None,
