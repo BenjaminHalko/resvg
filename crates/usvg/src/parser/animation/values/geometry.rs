@@ -6,10 +6,10 @@ use std::str::FromStr;
 use crate::tree::animation::{AnimationKind, Track};
 use crate::{NonZeroRect, NormalizedF32};
 
-use super::SmilValues;
 use super::attributes::{AttributeContext, warned, warned_geometry};
 use super::forms::{Forms, build_forms};
 use super::opacity::parse_opacity;
+use super::{SmilValues, finite_f32};
 
 pub(super) fn parse_offset_attribute(context: AttributeContext<'_>) -> Option<SmilValues> {
     let AttributeContext {
@@ -131,7 +131,7 @@ fn parse_offset(value: &str) -> Option<NormalizedF32> {
 fn parse_geometry_number(value: &str) -> Option<f32> {
     svgtypes::Length::from_str(value)
         .ok()
-        .map(|l| l.number as f32)
+        .and_then(|l| finite_f32(l.number))
 }
 
 fn parse_rect(value: &str) -> Option<NonZeroRect> {

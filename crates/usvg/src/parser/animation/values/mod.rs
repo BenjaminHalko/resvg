@@ -20,6 +20,12 @@ pub(crate) use attributes::{SmilTransformType, parse_smil_transform_values, pars
 pub(crate) use base_value::{BaseValue, SmilValues};
 pub(crate) use geometry::parse_resolved_geometry_values;
 
+/// `number` as an `f32`, or none where it doesn't fit in one (1e39 is infinity there).
+fn finite_f32(number: f64) -> Option<f32> {
+    let narrowed = number as f32;
+    narrowed.is_finite().then_some(narrowed)
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

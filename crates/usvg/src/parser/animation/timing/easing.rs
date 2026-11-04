@@ -99,7 +99,7 @@ fn parse_key_times(value: &str) -> Option<Vec<f32>> {
 }
 
 /// Parses a `keySplines` value into cubic Bézier control point quadruples.
-fn parse_key_splines(value: &str) -> Option<Vec<[f32; 4]>> {
+pub(crate) fn parse_key_splines(value: &str) -> Option<Vec<[f32; 4]>> {
     let mut splines = Vec::new();
     for group in value.split(';') {
         let group = group.trim();
@@ -153,6 +153,6 @@ fn valid_key_times(times: &[f32], calc_mode: CalcMode, values_count: usize) -> b
 }
 
 /// Checks that every `keySplines` control value is within `[0, 1]`.
-fn splines_in_range(splines: &[[f32; 4]]) -> bool {
+pub(crate) fn splines_in_range(splines: &[[f32; 4]]) -> bool {
     splines.iter().flatten().all(|v| (0.0f32..=1.0).contains(v))
 }

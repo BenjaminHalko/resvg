@@ -6,9 +6,9 @@ use std::str::FromStr;
 use crate::StrokeMiterlimit;
 use crate::tree::animation::{AnimationKind, CalcMode, Keyframe, Track};
 
-use super::SmilValues;
 use super::attributes::{AttributeContext, warn_not_interpolable, warned};
 use super::forms::build_forms;
+use super::{SmilValues, finite_f32};
 
 pub(super) fn parse_stroke_width_attribute(context: AttributeContext<'_>) -> Option<SmilValues> {
     let AttributeContext {
@@ -135,7 +135,9 @@ pub(super) fn parse_stroke_miterlimit_attribute(
 }
 
 fn parse_number(value: &str) -> Option<f32> {
-    svgtypes::Number::from_str(value).ok().map(|n| n.0 as f32)
+    svgtypes::Number::from_str(value)
+        .ok()
+        .and_then(|n| finite_f32(n.0))
 }
 
 fn parse_nonneg_number(value: &str) -> Option<f32> {
@@ -150,7 +152,7 @@ fn parse_miterlimit(value: &str) -> Option<StrokeMiterlimit> {
 pub(super) fn parse_number_list(value: &str) -> Option<Vec<f32>> {
     let mut list = Vec::new();
     for number in svgtypes::NumberListParser::from(value) {
-        list.push(number.ok()? as f32);
+        list.push(finite_f32(number.ok()?)?);
     }
     (!list.is_empty()).then_some(list)
 }

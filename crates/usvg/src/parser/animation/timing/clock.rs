@@ -69,7 +69,7 @@ fn parse_clock_colon(value: &str) -> Option<f32> {
 }
 
 /// Parses a finite `f32`.
-pub(super) fn parse_number(value: &str) -> Option<f32> {
+pub(crate) fn parse_number(value: &str) -> Option<f32> {
     let number: f32 = value.trim().parse().ok()?;
     number.is_finite().then_some(number)
 }

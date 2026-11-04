@@ -7,7 +7,8 @@ mod intervals;
 mod syncbase;
 mod syntax;
 
-pub(crate) use easing::parse_easing;
+pub(crate) use clock::parse_number;
+pub(crate) use easing::{parse_easing, parse_key_splines, splines_in_range};
 pub(crate) use intervals::parse_smil_timing;
 pub(crate) use syncbase::{Animations, RawBegin, SyncEdge};
 

@@ -88,3 +88,93 @@ fn a_chain_of_ends_written_backwards_is_read() {
     // (The last is 0.5 s long from 0 s: the one before it begins at 0.5 s.)
     assert_eq!(begins_after(&anims, &format!("a{}.end", n - 2)), [1.0]);
 }
+
+/// Every animation in `tree`, depth first.
+fn animations_in(group: &usvg::Group) -> Vec<std::sync::Arc<usvg::Animation>> {
+    let mut out = group.animations().to_vec();
+    for child in group.children() {
+        match child {
+            Node::Group(g) => out.extend(animations_in(g)),
+            Node::Path(p) => out.extend(p.animations().iter().cloned()),
+            _ => {}
+        }
+    }
+    out
+}
+
+#[test]
+fn a_motion_turned_by_no_finite_angle_is_not_turned() {
+    // `rotate="NaN"` was read as NaN, and `1e39` as infinity.
+    for rotate in ["NaN", "inf", "1e39"] {
+        let tree = parse(&format!(
+            "<rect width='4' height='4'><animateMotion path='M0 0 L10 10' dur='1s' rotate='{rotate}'/></rect>"
+        ));
+        let animations = animations_in(tree.root());
+        let AnimationKind::Motion(track) = animations[0].kind() else {
+            panic!("a motion, for {rotate}");
+        };
+        assert!(
+            matches!(track.rotate(), usvg::MotionRotate::Angle(a) if a == 0.0),
+            "rotate='{rotate}': {:?}",
+            track.rotate()
+        );
+    }
+}
+
+#[test]
+fn a_spline_motion_of_splines_that_arent_from_0_to_1_is_in_error() {
+    // As `<animate>`'s are: motion read its own splines, NaN and 4 and -3 among them.
+    for splines in ["0 NaN 1 1", "0.5 -3 0.5 4", "0 inf 1 1"] {
+        let tree = parse(&format!(
+            "<rect width='4' height='4'><animateMotion path='M0 0 L50 0' calcMode='spline' keyTimes='0;1' keySplines='{splines}' dur='1s'/></rect>"
+        ));
+        assert!(
+            animations_in(tree.root()).is_empty(),
+            "keySplines='{splines}'"
+        );
+        assert!(
+            tree.animation_warnings()
+                .iter()
+                .any(|w| w.code() == usvg::AnimationWarningCode::InvalidTiming),
+            "keySplines='{splines}' is said"
+        );
+    }
+    // (Under another calcMode they're ignored, as SMIL says.)
+    let tree = parse(
+        "<rect width='4' height='4'><animateMotion path='M0 0 L50 0' calcMode='linear' keyTimes='0;1' keySplines='0 NaN 1 1' dur='1s'/></rect>",
+    );
+    assert_eq!(animations_in(tree.root()).len(), 1);
+}
+
+#[test]
+fn a_value_too_big_for_an_f32_is_read_as_inf_is() {
+    // 1e39 is infinity as an f32: it was kept, a value of infinity, where `inf` itself is
+    // refused.
+    for animation in [
+        "<animateTransform attributeName='transform' type='rotate' values='0;{v}' dur='1s'/>",
+        "<animateTransform attributeName='transform' type='scale' values='1;{v}' dur='1s'/>",
+        "<animate attributeName='stroke-width' values='1;{v}' dur='1s'/>",
+        "<animate attributeName='stroke-dashoffset' values='0;{v}' dur='1s'/>",
+        "<animate attributeName='stroke-dasharray' values='1 2;{v} 2' dur='1s'/>",
+        "<animate attributeName='x' values='0;{v}' dur='1s'/>",
+    ] {
+        let read = |v: &str| {
+            let tree = parse(&format!(
+                "<rect width='4' height='4' stroke='red' stroke-dasharray='1 2'>{}</rect>",
+                animation.replace("{v}", v)
+            ));
+            let warnings: Vec<_> = tree.animation_warnings().iter().map(|w| w.code()).collect();
+            (format!("{:?}", animations_in(tree.root())), warnings)
+        };
+        let (huge, said) = read("1e39");
+        assert_eq!((huge, said.clone()), read("inf"), "{animation}");
+        assert!(
+            said.iter().any(|c| matches!(
+                c,
+                usvg::AnimationWarningCode::InvalidValue
+                    | usvg::AnimationWarningCode::InvalidGeometryValue
+            )),
+            "{animation} is said: {said:?}"
+        );
+    }
+}

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use tiny_skia_path::Path;
 
+use super::timing::{parse_key_splines, parse_number, splines_in_range};
 use crate::NormalizedF32;
 use crate::parser::svgtree::{AId, SvgNode};
 use crate::tree::animation::{AnimationKind, CalcMode, Easing, MotionRotate, MotionTrack};
@@ -45,7 +46,7 @@ pub(crate) fn parse_animate_motion(node: SvgNode) -> Option<(AnimationKind, Easi
         return None;
     };
 
-    let easing = parse_easing(node);
+    let easing = parse_easing(node)?;
 
     let key_points = match parse_key_points(node) {
         Ok(points) => points,
@@ -123,18 +124,30 @@ fn parse_rotate(node: SvgNode) -> MotionRotate {
     match node.attribute::<&str>(AId::Rotate) {
         Some("auto") => MotionRotate::Auto,
         Some("auto-reverse") => MotionRotate::AutoReverse,
-        Some(value) => MotionRotate::Angle(value.trim().parse::<f32>().unwrap_or(0.0)),
+        Some(value) => MotionRotate::Angle(parse_number(value).unwrap_or(0.0)),
         None => MotionRotate::Angle(0.0),
     }
 }
 
-/// Parses the easing parameters, defaulting `calcMode` to `paced`.
-fn parse_easing(node: SvgNode) -> Easing {
-    Easing::new(
-        parse_calc_mode(node),
-        parse_key_times(node),
-        parse_key_splines(node),
-    )
+/// Parses the easing parameters, defaulting `calcMode` to `paced`. `None`, said, for a spline
+/// motion whose key splines aren't numbers from 0 to 1, as `<animate>`'s: it's in error.
+fn parse_easing(node: SvgNode) -> Option<Easing> {
+    let calc_mode = parse_calc_mode(node);
+    let key_splines = node
+        .attribute::<&str>(AId::KeySplines)
+        .map(|raw| (raw, parse_key_splines(raw).filter(|s| splines_in_range(s))));
+    let key_splines = match key_splines {
+        Some((raw, None)) if matches!(calc_mode, CalcMode::Spline) => {
+            crate::parser::animation::report::report(
+                crate::AnimationWarningCode::InvalidTiming,
+                Some(raw),
+            );
+            return None;
+        }
+        Some((_, splines)) => splines,
+        None => None,
+    };
+    Some(Easing::new(calc_mode, parse_key_times(node), key_splines))
 }
 
 /// Parses `calcMode`, which defaults to `paced` for motion animations.
@@ -189,39 +202,6 @@ fn parse_key_times(node: SvgNode) -> Option<Vec<NormalizedF32>> {
     }
 
     (!times.is_empty()).then_some(times)
-}
-
-/// Parses `keySplines` into cubic Bézier control point quadruples.
-fn parse_key_splines(node: SvgNode) -> Option<Vec<[f32; 4]>> {
-    let value = node.attribute::<&str>(AId::KeySplines)?;
-
-    let mut splines = Vec::new();
-    for group in value.split(';') {
-        let group = group.trim();
-        if group.is_empty() {
-            continue;
-        }
-
-        let mut spline = [0.0f32; 4];
-        let mut count = 0;
-        for token in group.split([',', ' ', '\t', '\n', '\r']) {
-            if token.is_empty() {
-                continue;
-            }
-            if count == 4 {
-                return None;
-            }
-            spline[count] = token.parse::<f32>().ok()?;
-            count += 1;
-        }
-
-        if count != 4 {
-            return None;
-        }
-        splines.push(spline);
-    }
-
-    (!splines.is_empty()).then_some(splines)
 }
 
 #[cfg(test)]
