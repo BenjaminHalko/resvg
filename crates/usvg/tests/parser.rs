@@ -745,3 +745,77 @@ fn an_arc_of_a_huge_radius_is_drawn_as_its_chord() {
     let points: Vec<(f32, f32)> = path.data().points().iter().map(|p| (p.x, p.y)).collect();
     assert_eq!(points, [(160.0, 100.0), (40.0, 100.0)]);
 }
+
+/// A chain of `n` references of a kind, the last one used by a rect with the id `used`.
+fn chain(kind: &str, n: usize) -> String {
+    let link = |i: usize| match kind {
+        "clip-path" => format!(
+            "<clipPath id='l{i}'{}><rect width='9' height='9'/></clipPath>",
+            if i > 0 {
+                format!(" clip-path='url(#l{})'", i - 1)
+            } else {
+                String::new()
+            }
+        ),
+        "mask" => format!(
+            "<mask id='l{i}'{}><rect width='9' height='9' fill='white'/></mask>",
+            if i > 0 {
+                format!(" mask='url(#l{})'", i - 1)
+            } else {
+                String::new()
+            }
+        ),
+        "pattern" => format!(
+            "<pattern id='l{i}' width='4' height='4' patternUnits='userSpaceOnUse'>\
+                <rect width='3' height='3' fill='{}'/></pattern>",
+            if i > 0 {
+                format!("url(#l{})", i - 1)
+            } else {
+                "red".to_string()
+            }
+        ),
+        "feImage" => format!(
+            "<rect id='e{i}' width='2' height='2'{}/><filter id='l{i}'><feImage href='#e{i}'/></filter>",
+            if i > 0 {
+                format!(" filter='url(#l{})'", i - 1)
+            } else {
+                String::new()
+            }
+        ),
+        _ => unreachable!(),
+    };
+    let links: String = (0..n).map(link).collect();
+    let used = match kind {
+        "clip-path" | "mask" => format!("{kind}='url(#l{})'", n - 1),
+        "pattern" => format!("fill='url(#l{})'", n - 1),
+        _ => format!("filter='url(#l{})'", n - 1),
+    };
+    format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'>\
+            <defs>{links}</defs><rect id='used' width='5' height='5' {used}/></svg>"
+    )
+}
+
+#[test]
+fn a_chain_of_references_too_long_to_follow_is_read() {
+    // Each was converted inside the one before: 1,500 overflowed the stack.
+    for kind in ["clip-path", "mask", "pattern", "feImage"] {
+        let tree = usvg::Tree::from_str(&chain(kind, 2000), &usvg::Options::default());
+        assert!(tree.is_ok(), "a chain of {kind}");
+    }
+}
+
+#[test]
+fn a_chain_of_sixteen_references_still_draws() {
+    for kind in ["clip-path", "mask", "pattern"] {
+        let tree = usvg::Tree::from_str(&chain(kind, 16), &usvg::Options::default()).unwrap();
+        assert!(tree.node_by_id("used").is_some(), "a chain of 16 of {kind}");
+        let tree = usvg::Tree::from_str(&chain(kind, 17), &usvg::Options::default()).unwrap();
+        assert_eq!(
+            tree.node_by_id("used").is_some(),
+            kind == "pattern",
+            "a chain of 17 of {kind}: past the limit a clip path or a mask is a link to nothing, \
+             a pattern's innermost fill none"
+        );
+    }
+}

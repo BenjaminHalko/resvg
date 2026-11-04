@@ -815,7 +815,9 @@ fn convert_image(
     state: &converter::State,
     cache: &mut converter::Cache,
 ) -> Kind {
-    match convert_image_inner(fe, filter_subregion, state, cache) {
+    match cache.following(fe, |cache| {
+        convert_image_inner(fe, filter_subregion, state, cache)
+    }) {
         Some(kind) => kind,
         None => create_dummy_primitive(),
     }

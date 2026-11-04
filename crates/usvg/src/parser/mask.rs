@@ -15,6 +15,17 @@ pub(crate) fn convert(
     object_bbox: Option<NonZeroRect>,
     cache: &mut converter::Cache,
 ) -> Option<Arc<Mask>> {
+    cache.following(node, |cache| {
+        convert_followed(node, state, object_bbox, cache)
+    })
+}
+
+fn convert_followed(
+    node: SvgNode,
+    state: &converter::State,
+    object_bbox: Option<NonZeroRect>,
+    cache: &mut converter::Cache,
+) -> Option<Arc<Mask>> {
     // A `mask` attribute must reference a `mask` element.
     if node.tag_name() != Some(EId::Mask) {
         return None;

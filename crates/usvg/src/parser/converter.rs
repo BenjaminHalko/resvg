@@ -25,6 +25,10 @@ use crate::parser::paint_server::process_paint;
 use crate::text::flatten::DatabaseExt;
 use crate::*;
 
+/// The most references deep a conversion goes. Each converts its content inside the one before,
+/// so a chain of them as long as a file can hold would overflow the stack.
+const MOST_LINKS: usize = 16;
+
 #[derive(Clone)]
 pub struct State<'a> {
     pub(crate) parent_clip_path: Option<SvgNode<'a, 'a>>,
@@ -66,6 +70,10 @@ pub struct Cache {
     pub masks: HashMap<String, Arc<Mask>>,
     pub filters: HashMap<String, Arc<filter::Filter>>,
     pub paint: HashMap<String, Paint>,
+
+    /// How many references deep the conversion is (a clip path, a mask, a pattern or a filter's
+    /// image being converted inside another's).
+    links: usize,
 
     // used for ID generation
     all_ids: HashSet<u64>,
@@ -117,6 +125,8 @@ impl Cache {
             filters: HashMap::new(),
             paint: HashMap::new(),
 
+            links: 0,
+
             all_ids: HashSet::new(),
             linear_gradient_index: 0,
             radial_gradient_index: 0,
@@ -126,6 +136,26 @@ impl Cache {
             filter_index: 0,
             image_index: 0,
         }
+    }
+
+    /// `convert`, converting what `node` references, one reference deeper; `None` past
+    /// `MOST_LINKS`, as a link to nothing.
+    pub(crate) fn following<T>(
+        &mut self,
+        node: SvgNode,
+        convert: impl FnOnce(&mut Self) -> Option<T>,
+    ) -> Option<T> {
+        if self.links >= MOST_LINKS {
+            log::warn!(
+                "'{}' is referenced more than {MOST_LINKS} references deep. Skipped.",
+                node.element_id()
+            );
+            return None;
+        }
+        self.links += 1;
+        let converted = convert(self);
+        self.links -= 1;
+        converted
     }
 
     // TODO: macros?

@@ -14,6 +14,17 @@ pub(crate) fn convert(
     object_bbox: Option<NonZeroRect>,
     cache: &mut converter::Cache,
 ) -> Option<Arc<ClipPath>> {
+    cache.following(node, |cache| {
+        convert_followed(node, state, object_bbox, cache)
+    })
+}
+
+fn convert_followed(
+    node: SvgNode,
+    state: &converter::State,
+    object_bbox: Option<NonZeroRect>,
+    cache: &mut converter::Cache,
+) -> Option<Arc<ClipPath>> {
     // A `clip-path` attribute must reference a `clipPath` element.
     if node.tag_name() != Some(EId::ClipPath) {
         return None;

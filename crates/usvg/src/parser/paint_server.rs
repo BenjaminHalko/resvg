@@ -41,7 +41,7 @@ pub(crate) fn convert(
             #[cfg(feature = "animation")]
             cache,
         ),
-        EId::Pattern => convert_pattern(node, state, cache),
+        EId::Pattern => cache.following(node, |cache| convert_pattern(node, state, cache)),
         _ => unreachable!(),
     };
 
