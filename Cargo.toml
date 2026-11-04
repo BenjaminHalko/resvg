@@ -12,6 +12,11 @@ resolver = "2"
 [workspace.package]
 license = "Apache-2.0 OR MIT"
 
+# Until upstream draws an arc of a huge radius as its chord, or with a few curves, rather than
+# asking kurbo for curves without bound (its fix/bounded-arcs branch, on v0.16.1).
+[patch.crates-io]
+svgtypes = { git = "https://github.com/BenjaminHalko/svgtypes", rev = "3bb36c7327376b6f5d1e87f29ce56afa1c02662a" }
+
 [profile.production]
 inherits = "release"
 opt-level = 3

@@ -731,3 +731,17 @@ fn a_variable_instance_draws_a_glyph_of_no_points_and_padding_as_nothing() {
         assert_eq!(text.flattened().children().len(), 1, "at weight {weight}");
     }
 }
+
+#[test]
+fn an_arc_of_a_huge_radius_is_drawn_as_its_chord() {
+    // A radius of 6e112 asked svgtypes for some 10^19 curves: 30 GB, and an abort.
+    let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'>\
+        <path d='M 160 100 A 60 6e112 0 0 1 40 100' stroke='black' fill='none'/>\
+    </svg>";
+    let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).unwrap();
+    let usvg::Node::Path(path) = &tree.root().children()[0] else {
+        panic!("no path");
+    };
+    let points: Vec<(f32, f32)> = path.data().points().iter().map(|p| (p.x, p.y)).collect();
+    assert_eq!(points, [(160.0, 100.0), (40.0, 100.0)]);
+}

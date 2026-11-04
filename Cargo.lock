@@ -633,8 +633,7 @@ dependencies = [
 [[package]]
 name = "svgtypes"
 version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "695b5790b3131dafa99b3bbfd25a216edb3d216dad9ca208d4657bfb8f2abc3d"
+source = "git+https://github.com/BenjaminHalko/svgtypes?rev=3bb36c7327376b6f5d1e87f29ce56afa1c02662a#3bb36c7327376b6f5d1e87f29ce56afa1c02662a"
 dependencies = [
  "kurbo",
  "siphasher 1.0.3",
