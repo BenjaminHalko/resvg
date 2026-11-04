@@ -158,11 +158,9 @@ fn is_timing_function(token: &str) -> bool {
         "step-start",
         "step-end",
     ];
-    if KEYWORDS.iter().any(|k| token.eq_ignore_ascii_case(k)) {
-        return true;
-    }
-    token.ends_with(')')
-        && (starts_with_ci(token, "steps(") || starts_with_ci(token, "cubic-bezier("))
+    // (One CSS can't read, `steps(0)`, makes the declaration invalid, as browsers have it.)
+    KEYWORDS.iter().any(|k| token.eq_ignore_ascii_case(k))
+        || super::css::parse_timing_function(token).is_some()
 }
 
 fn is_iteration_count(token: &str) -> bool {
@@ -198,6 +196,10 @@ fn is_name(token: &str) -> bool {
         return false;
     }
 
+    // (A function, `steps(0)`, is never a name.)
+    if token.contains('(') {
+        return false;
+    }
     match token.chars().next() {
         Some('"') | Some('\'') => true,
         Some(c) if c == '-' || c == '_' || c.is_ascii_alphabetic() || !c.is_ascii() => true,
@@ -212,10 +214,6 @@ fn strip_suffix_ci<'a>(token: &'a str, suffix: &str) -> Option<&'a str> {
     let split = token.len() - suffix.len();
     let (head, tail) = token.split_at(split);
     tail.eq_ignore_ascii_case(suffix).then_some(head)
-}
-
-fn starts_with_ci(token: &str, prefix: &str) -> bool {
-    token.len() >= prefix.len() && token[..prefix.len()].eq_ignore_ascii_case(prefix)
 }
 
 /// Splits `text` on `delimiter` at the top level, keeping delimiters that appear

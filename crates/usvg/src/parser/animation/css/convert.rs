@@ -15,7 +15,8 @@ use self::metadata::{
     parse_iterations, parse_time, read_transform_origin, split_list,
 };
 use self::path::build_css_path_track;
-use self::timing::parse_timing_function;
+use self::timing::EASE;
+pub(crate) use self::timing::parse_timing_function;
 use self::transform::parse_transform_functions;
 use self::values::{
     parse_css_color, parse_css_opacity, parse_css_stroke_dashoffset, parse_css_stroke_width,
@@ -52,7 +53,13 @@ pub(crate) fn build_css_animations<'a, 'input>(
     let iteration_counts = longhand_list(node, AId::AnimationIterationCount);
     let directions = longhand_list(node, AId::AnimationDirection);
     let fill_modes = longhand_list(node, AId::AnimationFillMode);
-    let timing_functions = longhand_list(node, AId::AnimationTimingFunction);
+    // (A list with a timing function CSS can't read is a declaration browsers drop: each
+    // animation takes the initial one.)
+    let timing_functions: Vec<TimingFunction> = longhand_list(node, AId::AnimationTimingFunction)
+        .into_iter()
+        .map(parse_timing_function)
+        .collect::<Option<_>>()
+        .unwrap_or_default();
     let play_states = longhand_list(node, AId::AnimationPlayState);
 
     let is_stop = node.tag_name() == Some(EId::Stop);
@@ -85,10 +92,12 @@ pub(crate) fn build_css_animations<'a, 'input>(
             parse_fill_mode(cycle(&fill_modes, index).unwrap_or("none")),
             is_paused(cycle(&play_states, index).unwrap_or("running")),
         );
-        let easing = Easing::new(CalcMode::Linear, None, None).with_timing_function(
-            parse_timing_function(cycle(&timing_functions, index).unwrap_or("ease"))
-                .unwrap_or(TimingFunction::Linear),
-        );
+        let timing_function = match timing_functions.len() {
+            0 => EASE,
+            n => timing_functions[index % n],
+        };
+        let easing =
+            Easing::new(CalcMode::Linear, None, None).with_timing_function(timing_function);
 
         for property in animated_properties(rule) {
             if let Some(animation) = build_property_animation(

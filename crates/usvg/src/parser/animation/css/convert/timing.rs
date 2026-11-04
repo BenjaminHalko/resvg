@@ -3,13 +3,16 @@
 
 use crate::tree::animation::{StepPosition, TimingFunction};
 
-pub(super) fn parse_timing_function(value: &str) -> Option<TimingFunction> {
+/// CSS's initial timing function, `ease`.
+pub(super) const EASE: TimingFunction = TimingFunction::CubicBezier(0.25, 0.1, 0.25, 1.0);
+
+pub(crate) fn parse_timing_function(value: &str) -> Option<TimingFunction> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("linear") {
         return Some(TimingFunction::Linear);
     }
     if value.eq_ignore_ascii_case("ease") {
-        return Some(TimingFunction::CubicBezier(0.25, 0.1, 0.25, 1.0));
+        return Some(EASE);
     }
     if value.eq_ignore_ascii_case("ease-in") {
         return Some(TimingFunction::CubicBezier(0.42, 0.0, 1.0, 1.0));

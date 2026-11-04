@@ -178,3 +178,51 @@ fn a_value_too_big_for_an_f32_is_read_as_inf_is() {
         );
     }
 }
+
+#[test]
+fn a_shorthand_with_a_timing_function_css_cant_read_is_dropped() {
+    // Browsers drop the declaration; it animated linearly.
+    for timing in [
+        "steps(0)",
+        "steps(99999999999)",
+        "cubic-bezier(NaN, 0, 1, 1)",
+        "cubic-bezier(0.5, 1e39, 0.5, 1)",
+    ] {
+        let tree = parse(&format!(
+            "<style>@keyframes k {{ from {{ opacity: 0 }} to {{ opacity: 1 }} }} #r {{ animation: k 1s {timing} infinite }}</style><rect id='r' width='4' height='4'/>"
+        ));
+        assert!(animations_in(tree.root()).is_empty(), "{timing}");
+        assert!(
+            tree.animation_warnings()
+                .iter()
+                .any(|w| w.code() == usvg::AnimationWarningCode::InvalidAnimationShorthand),
+            "{timing} is said"
+        );
+    }
+    let tree = parse(
+        "<style>@keyframes k { from { opacity: 0 } to { opacity: 1 } } #r { animation: k 1s steps(4, jump-end) infinite }</style><rect id='r' width='4' height='4'/>",
+    );
+    let animations = animations_in(tree.root());
+    let timing = animations[0].easing().timing_function();
+    assert!(
+        matches!(
+            timing,
+            Some(TimingFunction::Steps(4, StepPosition::JumpEnd))
+        ),
+        "{timing:?}"
+    );
+}
+
+#[test]
+fn a_timing_function_longhand_css_cant_read_is_the_initial_ease() {
+    // Browsers drop the declaration, leaving `ease`; it was linear.
+    let tree = parse(
+        "<style>@keyframes k { from { opacity: 0 } to { opacity: 1 } } #r { animation-name: k; animation-duration: 1s; animation-timing-function: linear, steps(0) }</style><rect id='r' width='4' height='4'/>",
+    );
+    let animations = animations_in(tree.root());
+    let timing = animations[0].easing().timing_function();
+    assert!(
+        matches!(timing, Some(&TimingFunction::CubicBezier(a, b, c, d)) if [a, b, c, d] == [0.25, 0.1, 0.25, 1.0]),
+        "{timing:?}"
+    );
+}
